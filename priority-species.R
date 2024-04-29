@@ -48,22 +48,40 @@ count(filter(spp, is.na(priority_level)),
 spp <- spp %>%
   mutate(priority_level = ifelse(is.na(priority_level), 0, priority_level)) %>%
   mutate(priority = ifelse(priority_level == 1, 1,
-                           ifelse(votes_high == 1 | votes_nstates > 1 | revisit_nstates > 1, 
-                                  2, 3)))
+                           ifelse(votes_nstates > 1 | revisit_nstates > 1, 2,
+                                  ifelse(votes_high == 1, 3, 4))))
 # check:  
 # count(spp, votes_high, votes_nstates, revisit_nstates, priority_level, priority)
 
-# If we classify things as priority 2 if had multiple states voting species as
-# a priority OR if 2 or more people in a state voted species as priority
+# If we classify things as priority 2 if had multiple states voted species a
+# a priority, priority 3 if two or more people in a state voted species a 
+# priority, and priority 4 are species where only a single person in one state
+# considered the species a priority
 count(spp, priority)
   # priority 1: 8
-  # priority 2: 41
-  # priority 3: 45
+  # priority 2: 15
+  # priority 3: 26
+  # priority 4: 45
 
 #------------------------------------------------------------------------------#
 # Pick up here...
 
 # Next step: See if plant names are correct and/or they match up with entries
 # in NPN database
+
 # Dataframe with all plant species in NPN database
-species_list <- npn_species(kingdom = "Plantae") %>% data.frame()
+species_list <- npn_species(kingdom = "Plantae") %>% 
+  rename(NPN_common_name = common_name) %>%
+  data.frame()
+
+# First attempt to match priority species with NPN species
+spp <- spp %>%
+  left_join(select(species_list, species_id, NPN_common_name, genus, species),
+            by = c("genus", "species"))
+summary(spp)
+# 43 of 94 species_id are NA (meaning they have no match in NPN database)
+filter(spp, is.na(species_id)) %>% select(common_name, genus, species)
+
+filter(species_list, grepl("indigo", NPN_common_name))
+filter(species_list, genus == "Baptisia") # NPN only has Baptisia australis
+
