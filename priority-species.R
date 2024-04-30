@@ -2,20 +2,15 @@
 # Exploring priority plant species
 
 # Erin Zylstra
-# 2024-04-29
+# 2024-04-30
 ################################################################################
 
 library(rnpn)
 library(dplyr)
-# library(httr)
-# library(readr)
-# library(lubridate)
-# library(ggplot2)
 
-rm(list = ls())
+# Load csv with plant species that received votes from one or more states
+spp <- read.csv("data/species-with-votes.csv", na.strings = c(NA, ""))
 
-# Load csv with priority species
-spp <- read.csv("data/priority_species.csv", na.strings = c(NA, ""))
 # 8 species have been designated as "top priority" with priority_level == 1
 # Will make some rules to determine priority level for the rest
 spp <- spp %>%
@@ -49,7 +44,7 @@ spp <- spp %>%
   mutate(priority_level = ifelse(is.na(priority_level), 0, priority_level)) %>%
   mutate(priority = ifelse(priority_level == 1, 1,
                            ifelse(votes_nstates > 1 | revisit_nstates > 1, 2,
-                                  ifelse(votes_high == 1, 3, 4))))
+                                  ifelse(votes_high == 1, 3, 4)))) 
 # check:  
 # count(spp, votes_high, votes_nstates, revisit_nstates, priority_level, priority)
 
@@ -63,25 +58,49 @@ count(spp, priority)
   # priority 3: 26
   # priority 4: 45
 
-#------------------------------------------------------------------------------#
-# Pick up here...
+# Change entries with species = NA to species = "spp."
+spp <- spp %>%
+  mutate(species = ifelse(is.na(species), "spp.", species)) %>%
+  select(-priority_level)
 
-# Next step: See if plant names are correct and/or they match up with entries
-# in NPN database
+# See how many of the entries without a species name are high priority:
+count(spp, priority, species == "spp.")
+  # If we exclude the spp's:
+  # priority 1: 8
+  # priority 2: 13
+  # priority 3: 22
+  # priority 4: 40
+filter(spp, species == "spp.", priority == 2)
+  # Excluding Liatris spp (note that L. aspera is in priority 1 category)
+  # Excluding Solidago spp (note that S. rugosa is in priority 2 category)
 
-# Dataframe with all plant species in NPN database
-species_list <- npn_species(kingdom = "Plantae") %>% 
+# Create high-priority species list
+spp_hp <- spp %>%
+  filter(species != "spp." & priority %in% 1:2)
+
+# Dataframe with species in NPN database
+species_list <- npn_species() %>% 
   rename(NPN_common_name = common_name) %>%
+  select(species_id, NPN_common_name, genus, species) %>%
   data.frame()
 
-# First attempt to match priority species with NPN species
-spp <- spp %>%
-  left_join(select(species_list, species_id, NPN_common_name, genus, species),
-            by = c("genus", "species"))
-summary(spp)
-# 43 of 94 species_id are NA (meaning they have no match in NPN database)
-filter(spp, is.na(species_id)) %>% select(common_name, genus, species)
+# Match priority species with NPN species
+spp_hp <- spp_hp %>%
+  left_join(species_list, by = c("genus", "species"))
+filter(spp_hp, is.na(species_id))
+# Just one high priority species that doesn't appear in NPN database: 
+# Coreopsis tinctoria (golden tickseed). Priority 2: 1 vote in LA and NM
 
-filter(species_list, grepl("indigo", NPN_common_name))
-filter(species_list, genus == "Baptisia") # NPN only has Baptisia australis
+# Simplify state information
+spp_hp <- spp_hp %>%
+  mutate(LA = ifelse((!is.na(votes_LA) & votes_LA > 0) |
+                       (!is.na(revisit_votes_LA) & revisit_votes_LA > 0), 1, 0)) %>%
+  mutate(OK = ifelse((!is.na(votes_OK) & votes_OK > 0) |
+                       (!is.na(revisit_votes_OK) & revisit_votes_OK > 0), 1, 0)) %>%
+  mutate(NM = ifelse((!is.na(votes_NM) & votes_NM > 0) |
+                       (!is.na(revisit_votes_NM) & revisit_votes_NM > 0), 1, 0)) %>%
+  mutate(TX = ifelse(!is.na(revisit_votes_TX) & revisit_votes_TX > 0, 1, 0)) %>%
+  select(common_name, genus, species, species_id, LA, OK, NM, TX, priority)
 
+# Write to file
+# write.csv(spp_hp, "data/priority-species.csv", row.names = FALSE)
