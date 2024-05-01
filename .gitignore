@@ -2,3 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Zip files with iNat data
+data/iNat/*.zip
