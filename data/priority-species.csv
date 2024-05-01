@@ -1,22 +1,22 @@
-"common_name","genus","species","species_id","LA","OK","NM","TX","priority"
-"showy milkweed","Asclepias","speciosa",224,0,1,1,0,1
-"green antelopehorn","Asclepias","viridis",200,1,1,0,1,1
-"common buttonbush","Cephalanthus","occidentalis",201,1,1,0,0,1
-"eastern purple coneflower","Echinacea","purpurea",202,1,1,1,0,1
-"common sunflower","Helianthus","annuus",203,0,1,1,0,1
-"tall blazing star","Liatris","aspera",204,1,1,1,1,1
-"cardinalflower","Lobelia","cardinalis",916,1,1,1,0,1
-"wild bergamot","Monarda","fistulosa",931,1,1,1,0,1
-"spider milkweed","Asclepias","asperula",223,0,1,1,1,2
-"broadleaf milkweed","Asclepias","latifolia",1332,0,1,1,0,2
-"butterfly milkweed","Asclepias","tuberosa",195,1,1,1,1,2
-"wavy-leaved thistle","Cirsium","undulatum",2118,0,1,0,1,2
-"lanceleaf tickseed","Coreopsis","lanceolata",1606,1,1,0,0,2
-"tickseed","Coreopsis","tinctoria",NA,1,0,1,0,2
-"purple prairie clover","Dalea","purpurea",845,0,1,1,0,2
-"rattlesnake master","Eryngium","yuccifolium",1814,1,1,0,0,2
-"pinkscale blazing star","Liatris","elegans",911,1,1,0,0,2
-"blackeyed Susan","Rudbeckia","hirta",1637,0,1,1,0,2
-"wrinkleleaf goldenrod","Solidago","rugosa",299,1,1,0,0,2
-"white heath aster","Symphyotrichum","ericoides",207,1,1,1,0,2
-"New England aster","Symphyotrichum","novae-angliae",1034,1,1,0,0,2
+common_name,genus,species,species_id,LA,OK,NM,TX,priority,first_flower_ttr,first_flower_UT,first_flower_season
+showy milkweed,Asclepias,speciosa,224,0,1,1,0,1,May,May,spring
+green antelopehorn,Asclepias,viridis,200,1,1,0,1,1,Mar,Apr,spring
+common buttonbush,Cephalanthus,occidentalis,201,1,1,0,0,1,May,Jun,spring/summer
+eastern purple coneflower,Echinacea,purpurea,202,1,1,1,0,1,Apr,Apr,spring
+common sunflower,Helianthus,annuus,203,0,1,1,0,1,Jan,Jun,spring
+tall blazing star,Liatris,aspera,204,1,1,1,1,1,Jul,Aug,summer
+cardinalflower,Lobelia,cardinalis,916,1,1,1,0,1,Jul,May,spring/summer
+wild bergamot,Monarda,fistulosa,931,1,1,1,0,1,Apr,May,spring
+spider milkweed,Asclepias,asperula,223,0,1,1,1,2,May,Mar,spring
+broadleaf milkweed,Asclepias,latifolia,1332,0,1,1,0,2,May,Jul,spring/summer
+butterfly milkweed,Asclepias,tuberosa,195,1,1,1,1,2,Apr,May,spring
+wavy-leaved thistle,Cirsium,undulatum,2118,0,1,0,1,2,Jun,May,spring
+lanceleaf tickseed,Coreopsis,lanceolata,1606,1,1,0,0,2,Mar,Mar,spring
+tickseed,Coreopsis,tinctoria,NA,1,0,1,0,2,NA,NA,NA
+purple prairie clover,Dalea,purpurea,845,0,1,1,0,2,Apr,Jun,spring
+rattlesnake master,Eryngium,yuccifolium,1814,1,1,0,0,2,May,May,spring
+pinkscale blazing star,Liatris,elegans,911,1,1,0,0,2,Jul,Aug,summer
+blackeyed Susan,Rudbeckia,hirta,1637,0,1,1,0,2,Jan,Mar,spring
+wrinkleleaf goldenrod,Solidago,rugosa,299,1,1,0,0,2,NA,Aug,summer
+white heath aster,Symphyotrichum,ericoides,207,1,1,1,0,2,Aug,Jul,summer
+New England aster,Symphyotrichum,novae-angliae,1034,1,1,0,0,2,NA,Aug,summer
