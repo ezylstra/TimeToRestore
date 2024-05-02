@@ -2,7 +2,7 @@
 # Exploring priority plant species
 
 # Erin Zylstra
-# 2024-04-30
+# 2024-05-02
 ################################################################################
 
 library(rnpn)
@@ -37,46 +37,55 @@ spp <- spp %>%
 #   count(revisit_votes_LA, revisit_votes_OK, revisit_votes_NM, revisit_votes_TX, 
 #         revisit_nstates)
 
-count(filter(spp, is.na(priority_level)), 
-             votes_high, votes_nstates, revisit_nstates)
+# Adding information indicating which species were included in previous work 
+# that was done with "16 priority species"
+old16 <- read.csv("data/old/previous-16-priority-species.csv")
+spp <- spp %>%
+  mutate(prev16 = ifelse(common_name %in% old16$common_name, 1, 0))
+
+# For now, classifying things as priority 2 if had multiple states voted species 
+# a priority; priority 3 if it was considered one of top 16 priority species in 
+# previous iterations of the work; priority 4 if two or more people in a state 
+# voted species a priority, and priority 5 are species where only a single 
+# person in one state considered the species a priority
 
 spp <- spp %>%
   mutate(priority_level = ifelse(is.na(priority_level), 0, priority_level)) %>%
   mutate(priority = ifelse(priority_level == 1, 1,
                            ifelse(votes_nstates > 1 | revisit_nstates > 1, 2,
-                                  ifelse(votes_high == 1, 3, 4)))) 
+                                  ifelse(prev16 == 1, 3,
+                                         ifelse(votes_high == 1, 4, 5)))))
 # check:  
-# count(spp, votes_high, votes_nstates, revisit_nstates, priority_level, priority)
+# count(spp, priority, priority_level, votes_nstates, revisit_nstates, 
+#       prev16, votes_high)
 
-# If we classify things as priority 2 if had multiple states voted species a
-# a priority, priority 3 if two or more people in a state voted species a 
-# priority, and priority 4 are species where only a single person in one state
-# considered the species a priority
 count(spp, priority)
   # priority 1: 8
   # priority 2: 15
-  # priority 3: 26
-  # priority 4: 45
+  # priority 3: 5
+  # priority 4: 21
+  # priority 5: 45
 
 # Change entries with species = NA to species = "spp."
 spp <- spp %>%
   mutate(species = ifelse(is.na(species), "spp.", species)) %>%
   select(-priority_level)
 
-# See how many of the entries without a species name are high priority:
-count(spp, priority, species == "spp.")
+# See how many of the entries with/without a species name are high priority:
+count(filter(spp, species != "spp."), priority)
   # If we exclude the spp's:
   # priority 1: 8
   # priority 2: 13
-  # priority 3: 22
-  # priority 4: 40
+  # priority 3: 5
+  # priority 4: 17
+  # priority 5: 40
 filter(spp, species == "spp.", priority == 2)
   # Excluding Liatris spp (note that L. aspera is in priority 1 category)
   # Excluding Solidago spp (note that S. rugosa is in priority 2 category)
 
-# Create high-priority species list
+# Create high-priority species list (levels 1:3)
 spp_hp <- spp %>%
-  filter(species != "spp." & priority %in% 1:2)
+  filter(species != "spp." & priority %in% 1:3)
 
 # Dataframe with species in NPN database
 species_list <- npn_species() %>% 
