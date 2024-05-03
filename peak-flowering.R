@@ -6,17 +6,19 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-02
+# 2024-05-03
 ################################################################################
 
 require(rnpn)
 require(dplyr)
 require(lubridate)
+require(tidyr)
 require(maps)
 
 rm(list = ls())
 
 # Download and format NPN data for priority plant species ---------------------#
+
 # Load csv with priority plant species
 spp <- read.csv("data/priority-species.csv")
   # species_id: NPN species ID
@@ -127,122 +129,14 @@ df <- df %>%
   select(-c(state_name, abb))
 
 # Put data into wide form -----------------------------------------------------#
+
 # To make it easier to find data entry problems and calculate the number of open
 # flowers when both intensity values were provided, we'll create a new dataframe
 # where each row contains all information an observer collected about an
 # individual plant on a given day
 
-
-
-
-# Check if observers report No to Flowers or Flower buds but Yes to Open Flowers
-# First, see if observers made multiple observations of a plant in a day
-inddate <- df %>%
-  group_by(observedby_person_id, individual_id, observation_date) %>%
-  summarize(n_records = n(),
-            n_fl = sum(phenophase_id == 500),
-            n_fo = sum(phenophase_id == 501),
-            .groups = "keep") %>%
-  data.frame()
-count(inddate, n_records, n_fl, n_fo)
-  # Vast majority have 2 records (1 flower, 1 flower open), as expected
-  # 1246 have only the flower record (no data for flower open)
-  # 2047 have only the flower open records (no data for flower)
-  # 29 have 2 records for flowers, flowers open, or both
-
-  
-  
-  mutate(i_flower = ifelse(phenophase_id == 500 & phenophase_status == 1, 1, 0),
-         i_open = ifelse(phenophase_id == 501 & phenophase_status == 1, 1, 0),
-         conflict = ifelse(i_flower == 0 & i_open == 1, 1, 0))
-
-
-
-# Not sure the grouping works because there are occasionally entries with same
-# observer, individual, date, phenophase...
-df <- df %>% 
-  group_by(observedby_person_id, individual_id, observation_date) %>% 
-  mutate(FlowersNo = ifelse(phenophase_status == 0 & phenophase_id == 500, 1, NA)) %>% 
-  mutate(OpenFlowersYes= ifelse(phenophase_status == 1 & phenophase_id ==501, 1, NA)) %>% 
-  mutate(FlowersError = ifelse(FlowersNo == 1 & OpenFlowersYes == 1, 1, NA)) %>%
-  ungroup() %>%
-  data.frame()
-
-# No inconsistencies, so we'll drop these fields
-df <- subset(df, select = -c(FlowersNo,OpenFlowersYes,FlowersError))
-
-
-
-# AT SOME POINT, NEED TO CHECK FOR DUP OBSERVATIONS, WHERE INTENSITY VALUES
-# OR STATUS VALUES DIFFER.
-
-
-
-
-# Quick look at the number of individuals monitored, by species
-df %>%
-  group_by(common_name) %>%
-  summarize(n_individs = n_distinct(individual_id)) %>%
-  data.frame() %>%
-  arrange(desc(n_individs))
-# Species with notably few individuals  
-# green antelopehorn, pinkscale blazing star (1)
-# aquatic milkweed (6)
-# broadleaf milkweed (7)
-# All other species have >= 16 individuals
-
-
-
-
-
-# Check if observers report No to Flowers or Flower buds but Yes to Open Flowers
-# (I might have more thorough checks in FlowerForBats script...)
-
-# Not sure the grouping works because there are occasionally entries with same
-# observer, individual, date, phenophase...
-df <- df %>% 
-  group_by(observedby_person_id, individual_id, observation_date) %>% 
-  mutate(FlowersNo = ifelse(phenophase_status == 0 & phenophase_id == 500, 1, NA)) %>% 
-  mutate(OpenFlowersYes= ifelse(phenophase_status == 1 & phenophase_id ==501, 1, NA)) %>% 
-  mutate(FlowersError = ifelse(FlowersNo == 1 & OpenFlowersYes == 1, 1, NA)) %>%
-  ungroup() %>%
-  data.frame()
-
-# No inconsistencies, so we'll drop these fields
-df <- subset(df, select = -c(FlowersNo,OpenFlowersYes,FlowersError))
-
-# Identify repeated observations on the same date/individual plant/phenophase
-df <- df %>% 
-  group_by(individual_id, observation_date, phenophase_id) %>% 
-  mutate(same_date_ind_pp = as.integer(n() > 1))  %>% 
-  ungroup() %>%
-  data.frame()
-
-# View the number of records with the same date/ind/pp - presumed conflicts
-same_date_ind_pp_summary <- df %>%
-  count(phenophase_description, same_date_ind_pp) %>%
-  group_by(phenophase_description) %>%
-  mutate(freq = n / sum(n)) %>%
-  data.frame()
-
-# About 1% of records for Flowers/Flower buds and 0.7% for Open Flowers have the 
-# same date/phenophase/individual plant
-same_date_records <- df %>% 
-  subset(same_date_ind_pp == 1)
-
-
-
-
-
-
-
-
-
-
-# Code midpoints to values to facilitate calculating the number of flowers
+# Convert intensity value ranges to midpoints so they're easier to work with
 df <- df %>%
-  mutate(year = lubridate::year(observation_date)) %>%
-  mutate(intensity_value = na_if(intensity_value, "-9999")) %>%
   mutate(midpoint = case_when(
     intensity_value == "Less than 3" ~ 2, 
     intensity_value == "3 to 10" ~ 7, 
@@ -259,24 +153,185 @@ df <- df %>%
     intensity_value == "95% or more" ~ 0.95,
     .default = NA)
   )
+# Check that status equals 1 if there's an intensity value
+count(df, phenophase_status, midpoint)
 
-# Get a count of observers who contributed to observing a given ind plant in a year
-# Added ungroup and data.frame options since I don't want a grouped tbl
+# Identify when observers made multiple observations of a plant phenophase 
+# in one day
 df <- df %>%
-  group_by(individual_id, year) %>%
-  mutate(number_observers = n_distinct(observedby_person_id)) %>%
+  group_by(observedby_person_id, individual_id, observation_date) %>%
+  mutate(n_records = n(),
+         n_fl = sum(phenophase_id == 500),
+         n_fo = sum(phenophase_id == 501)) %>%
+  ungroup() %>%
+  data.frame()
+count(df, n_records, n_fl, n_fo)
+  # Vast majority have 2 records (1 flower, 1 open flower obs), as expected
+  # But there are 29 instances where an observer made 2 observations of a 
+  # phenophase in a day and >2000 instances with an open flower obs and no 
+  # corresponding flower obs
+
+# When an observer appears to have made two observations of a plant phenophase 
+# in one day, will keep the observation with more advanced phenophase, higher 
+# intensity value, or more information. Will do this by sorting observations and 
+# keeping only the first
+obsdatep <- df %>%
+  group_by(observedby_person_id, individual_id, observation_date, phenophase_id) %>%
+  summarize(n_obs = n(),
+            .groups = "keep") %>%
+  data.frame()
+obsdatep$obsnum <- 1:nrow(obsdatep)
+
+df <- df %>%
+  arrange(observedby_person_id, individual_id, observation_date, phenophase_id,
+          desc(phenophase_status), desc(midpoint)) %>%
+  left_join(select(obsdatep, -n_obs), 
+            by = c("observedby_person_id", "individual_id", "observation_date", 
+                   "phenophase_id")) %>%
+  # Create "dups" column, where dups > 1 indicates that the observation can be
+  # removed since there's another observation that same day with more advanced
+  # phenology or more information.
+  mutate(dups = sequence(rle(as.character(obsnum))$lengths))
+
+# Remove these extra observations and unnecessary columns
+df <- df %>%
+  filter(dups == 1) %>%
+  select(-c(obsnum, dups, n_records, n_fl, n_fo)) %>%
+  arrange(species_id, observation_date, observedby_person_id, phenophase_id)
+
+####################### NEED TO PICK UP HERE ###################################
+# I think we need to do something here to deal with multiple phenophase 
+# observations of the same plant on the same date by different observers.
+
+# SEE NOTES
+
+
+
+
+# Convert status information into wide form, with each row containing all 
+# data recorded by an observer of a given plant on a given day
+pstatus <- df %>%
+  select(-c(observation_id, phenophase_id, intensity_value, midpoint)) %>%
+  pivot_wider(names_from = phenophase_description,
+              values_from = phenophase_status) %>%
+  data.frame() %>%
+  rename(flowers_s = Flowers.or.flower.buds,
+         flowers_open_s = Open.flowers)
+
+# Convert intensity information into wide form, with each row containing all 
+# data recorded by an observer of a given plant on a given day
+pint <- df %>%
+  select(-c(observation_id, phenophase_id, phenophase_status, intensity_value)) %>%
+  pivot_wider(names_from = phenophase_description,
+              values_from = midpoint) %>%
+  data.frame() %>%
+  rename(flowers_i = Flowers.or.flower.buds,
+         flowers_open_i = Open.flowers)
+
+# Merge status and intensity dataframes
+obs <- left_join(pstatus, pint)
+
+# Address any inconsistencies -------------------------------------------------#
+
+# If there was no flowers status obs (= NA), but open flowers = 1, change 
+# flowers status to 1
+obs$flowers_s[is.na(obs$flowers_s) & obs$flowers_open_s == 1] <- 1
+
+# If observers said no to flowers (0) but yes to open flowers (1):
+  # Make flower status = 1 if there's an intensity value for open flowers or if
+  # the observation occurred between day 100 and 300. Delete other observations
+  # because the open flower status is questionable.
+  
+  # Check before running this:
+    count(obs, flowers_s, flowers_open_s, is.na(flowers_open_i),
+          day_of_year %in% 100:300)
+  # Looks like they'll be just two observations left where the open flower 
+  # status is questionable.
+  
+obs <- obs %>%
+  mutate(flowers_s = case_when(
+    flowers_s == 0 & flowers_open_s == 1 & 
+      (!is.na(flowers_open_i) | day_of_year %in% 100:300) ~ 1,
+    .default = flowers_s)
+  )
+obs <- obs %>%
+  filter(!(!is.na(flowers_s) & !is.na(flowers_open_s) & 
+             flowers_s == 0 & flowers_open_s == 1))
+
+# Looks like no observations with flowers_s = NA and flowers_open_s = 0 have
+# intensity values for open flowers, so we can leave as is.
+
+# Need to identify where we have multiple observations of the same plant on the
+# same date (by different observers, since we've already taken care of multiple
+# observations by the same observer). Where status is 1, we could calculate the
+# mean of intensity values. However, I think it's a problem if different 
+# observers reported different phenophase statuses for the same plant on the 
+# same date, whether we're characterizing peak flowering or open flower 
+# phenophases.  
+
+# Create indicators for entries that have intensity values
+obs <- obs %>%
+  arrange(species_id, individual_id, observation_date, 
+          desc(flowers_s), desc(flowers_open_s), desc(flowers_open_i)) %>%
+  mutate(fl_i_bin = if_else(is.na(flowers_i), 0, 1),
+         fo_i_bin = if_else(is.na(flowers_open_i), 0, 1),
+         both_i = fl_i_bin * fo_i_bin) %>%
+  group_by(individual_id, observation_date) %>%
+  mutate(n_obs = n()) %>%
   ungroup() %>%
   data.frame()
 
-# Remove unneeded columns (I think I've figured it out based on their indices)
-df <- select(df, -c(update_datetime, genus, species, kingdom, abundance_value))
+# Look at these extreme examples to highlight variation in observations! Does
+# it even make sense to average intensity values? And if we do take averages, 
+# are we averaging over set of flower intensity values and then averaging over 
+# set of open flower intensity values even if they came from different people?
+# If we're going to calculate the nubmer of open flowers, then should we do
+# that first for any observation that had both intensity values, then average?
+filter(obs, n_obs == 10)
+filter(obs, n_obs == 9)
+filter(obs, n_obs == 6)
+filter(obs, n_obs == 5)
 
-# Remove rows that are duplicates (ie, same plant, date, phenophase status, 
-# intensity_value), regardless of who reported the data (observedby_person_id)
-df <- df %>% 
-  distinct(individual_id, observation_date, phenophase_description, 
-           phenophase_status, intensity_value, .keep_all = TRUE)
 
-# I checked that each individual plant is only associated with a single site
+
+plantdate <- obs %>%
+  group_by(individual_id, observation_date) %>%
+  filter(n() > 1) %>%
+  summarize(fl_s_min = if_else(all(is.na(flowers_s)), NA, 
+                               min(flowers_s, na.rm = TRUE)),
+            fl_s_max = if_else(all(is.na(flowers_s)), NA, 
+                               max(flowers_s, na.rm = TRUE)),
+            .groups = "keep") %>%
+  data.frame()
+
+
+
+            fl_s_min = if_else(all(is.na(flowers_s)), NA, 
+                               min(flowers_s, na.rm = TRUE)),
+            fl_s_max = if_else(all(is.na(flowers_s)), NA, 
+                               max(flowers_s, na.rm = TRUE)),
+            fo_s_min = if_else(all(is.na(flowers_open_s)), NA, 
+                               min(flowers_s, na.rm = TRUE)),
+            fo_s_max = if_else(all(is.na(flowers_open_s)), NA, 
+                               max(flowers_s, na.rm = TRUE)),
+            .groups = "keep") %>%
+  data.frame() %>%
+  mutate(flowers_same = if_else(fl_s_min == fl_s_max, 1, 0),
+         flowers_open_same = if_else(fo_s_min == fo_s_max, 1, 0))
+
+  
+  
+  
+  # Calculate number of observations
+  mutate(n_obs = n()) %>%
+  # Create indicator to see whether flower/open flower status is consistent
+  
+  
+  mutate(flowers_s_same = ifelse(length(unique(flowers_s)) == 1, 1, 0),
+         flowers_open_s_same = ifelse(length(unique(flowers_open_s)) == 1, 1, 0)) %>%
+  ungroup() %>%
+  data.frame()
+
+
 
 
