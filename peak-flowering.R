@@ -78,11 +78,11 @@ df <- df %>%
   select(-c(update_datetime, kingdom, intensity_category_id, abundance_value))
 
 # Count number of people who contributed observations of a given plant in a year
-df <- df %>%
-  group_by(individual_id, year) %>%
-  mutate(n_observers = n_distinct(observedby_person_id)) %>%
-  ungroup() %>%
-  data.frame()
+# df <- df %>%
+#   group_by(individual_id, year) %>%
+#   mutate(n_observers = n_distinct(observedby_person_id)) %>%
+#   ungroup() %>%
+#   data.frame()
 
 # Remove rows that are duplicates (ie, same plant, date, phenophase status, 
 # intensity_value), regardless of who reported the data (observedby_person_id)
@@ -128,14 +128,11 @@ df <- df %>%
   filter(!(state == "NM" & abb == "SC")) %>%
   select(-c(state_name, abb))
 
-# Put data into wide form -----------------------------------------------------#
+# Deal with multiple observations of the same plant, phenophase on the same ---#
+# date ------------------------------------------------------------------------#
 
-# To make it easier to find data entry problems and calculate the number of open
-# flowers when both intensity values were provided, we'll create a new dataframe
-# where each row contains all information an observer collected about an
-# individual plant on a given day
-
-# Convert intensity value ranges to midpoints so they're easier to work with
+# First, converting intensity value ranges to midpoints so they're easier to 
+# work with
 df <- df %>%
   mutate(midpoint = case_when(
     intensity_value == "Less than 3" ~ 2, 
@@ -165,16 +162,12 @@ df <- df %>%
          n_fo = sum(phenophase_id == 501)) %>%
   ungroup() %>%
   data.frame()
-count(df, n_records, n_fl, n_fo)
-  # Vast majority have 2 records (1 flower, 1 open flower obs), as expected
-  # But there are 29 instances where an observer made 2 observations of a 
-  # phenophase in a day and >2000 instances with an open flower obs and no 
-  # corresponding flower obs
+# count(df, n_records, n_fl, n_fo)
 
 # When an observer appears to have made two observations of a plant phenophase 
 # in one day, will keep the observation with more advanced phenophase, higher 
 # intensity value, or more information. Will do this by sorting observations and 
-# keeping only the first
+# keeping only the first.
 obsdatep <- df %>%
   group_by(observedby_person_id, individual_id, observation_date, phenophase_id) %>%
   summarize(n_obs = n(),
@@ -199,13 +192,75 @@ df <- df %>%
   select(-c(obsnum, dups, n_records, n_fl, n_fo)) %>%
   arrange(species_id, observation_date, observedby_person_id, phenophase_id)
 
-####################### NEED TO PICK UP HERE ###################################
-# I think we need to do something here to deal with multiple phenophase 
-# observations of the same plant on the same date by different observers.
+# Deal with multiple observations on the same date of the same plant by
+# different observers (0.3% of plant-phenophase-date combinations)
+datep <- df %>%
+  group_by(individual_id, observation_date, phenophase_id) %>%
+  summarize(n_obs = n(),
+            .groups = "keep") %>%
+  data.frame()
+datep$obsnum <- 1:nrow(datep)
 
-# SEE NOTES
+df <- df %>%
+  arrange(individual_id, observation_date, phenophase_id, 
+          desc(phenophase_status), desc(midpoint)) %>%
+  left_join(select(datep, -n_obs), 
+            by = c("individual_id", "observation_date", "phenophase_id")) %>%
+  mutate(dups = sequence(rle(as.character(obsnum))$lengths))
+
+# We can:
+# 1) just select one observation with the most advanced phenology or most info
+# 2) just use status = 1 and average over midpoints
+  # Note: we'd need to put data in wide form to identify observations when both
+  # intensity values were reported and then only use those observations to
+  # calculate number of open flowers (and average across them if there were more
+  # than one)
+# For now, we'll go with option 2 because it better mirrors the approach that 
+# others used previously. 
+
+# Remove "duplicates" with status == 0
+df <- df %>% filter(!(dups > 1 & phenophase_status == 0))
+
+# Recreate obsnum column now that we've removed observations
+datep <- df %>%
+  group_by(individual_id, observation_date, phenophase_id) %>%
+  summarize(n_obs = n(),
+            .groups = "keep") %>%
+  data.frame()
+datep$obsnum <- 1:nrow(datep)
+
+df <- df %>%
+  select(-c(obsnum, dups)) %>%
+  left_join(datep, by = c("individual_id", "observation_date", "phenophase_id"))
+
+# Calculate mean of intensity midpoints, where reported
+mean_midpoints <- df %>%
+  filter(n_obs > 1) %>%
+  group_by(obsnum) %>%
+  summarize(midpoint_mn = if_else(all(is.na(midpoint)), NA, 
+                                  mean(midpoint, na.rm = TRUE))) %>%
+  data.frame()
+df <- df %>% 
+  left_join(mean_midpoints, by = "obsnum") %>%
+  mutate(midpoint = if_else(is.na(midpoint_mn), midpoint, midpoint_mn)) %>%
+  select(-c(midpoint_mn, observation_id, observedby_person_id, 
+            intensity_value, obsnum)) %>%
+  distinct()
+# Keeping n_obs column to remember how many observers recorded info about that
+# plant and phenophase on that date, but removed the obsnum column
+
+# Now we're left with a single "observation" (status, mean intensity value if
+# at least one observer reported it) for each plant, phenophase, and year
 
 
+
+
+# Put data into wide form -----------------------------------------------------#
+
+# To make it easier to find data entry problems and calculate the number of open
+# flowers when both intensity values were provided, we'll create a new dataframe
+# where each row contains all information an observer collected about an
+# individual plant on a given day
 
 
 # Convert status information into wide form, with each row containing all 
