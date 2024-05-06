@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-03
+# 2024-05-06
 ################################################################################
 
 require(rnpn)
@@ -128,8 +128,7 @@ df <- df %>%
   filter(!(state == "NM" & abb == "SC")) %>%
   select(-c(state_name, abb))
 
-# Deal with multiple observations of the same plant, phenophase on the same ---#
-# date ------------------------------------------------------------------------#
+# Deal with observations of the same plant, phenophase on the same date -------#
 
 # First, converting intensity value ranges to midpoints so they're easier to 
 # work with
@@ -153,8 +152,8 @@ df <- df %>%
 # Check that status equals 1 if there's an intensity value
 count(df, phenophase_status, midpoint)
 
-# Identify when observers made multiple observations of a plant phenophase 
-# in one day
+# Identify when an observer made multiple observations of a plant phenophase in
+# one day
 df <- df %>%
   group_by(observedby_person_id, individual_id, observation_date) %>%
   mutate(n_records = n(),
@@ -186,14 +185,14 @@ df <- df %>%
   # phenology or more information.
   mutate(dups = sequence(rle(as.character(obsnum))$lengths))
 
-# Remove these extra observations and unnecessary columns
+# Remove extra observations and unnecessary columns
 df <- df %>%
   filter(dups == 1) %>%
   select(-c(obsnum, dups, n_records, n_fl, n_fo)) %>%
   arrange(species_id, observation_date, observedby_person_id, phenophase_id)
 
 # Deal with multiple observations on the same date of the same plant by
-# different observers (0.3% of plant-phenophase-date combinations)
+# different observers (~0.3% of plant-phenophase-date combinations)
 datep <- df %>%
   group_by(individual_id, observation_date, phenophase_id) %>%
   summarize(n_obs = n(),
@@ -210,11 +209,11 @@ df <- df %>%
 
 # We can:
 # 1) just select one observation with the most advanced phenology or most info
-# 2) just use status = 1 and average over midpoints
-  # Note: we'd need to put data in wide form to identify observations when both
-  # intensity values were reported and then only use those observations to
-  # calculate number of open flowers (and average across them if there were more
-  # than one)
+# 2) use status = 1 and average over midpoints
+# 3) identify observations when both intensity values were reported and then 
+#    only use those observations to calculate number of open flowers (and 
+#    average across them if there were more than one). Note that it would be 
+#    easiest to have data in wide form to do this.
 # For now, we'll go with option 2 because it better mirrors the approach that 
 # others used previously. 
 
@@ -247,50 +246,46 @@ df <- df %>%
             intensity_value, obsnum)) %>%
   distinct()
 # Keeping n_obs column to remember how many observers recorded info about that
-# plant and phenophase on that date, but removed the obsnum column
+# plant and phenophase on that date, but removing the obsnum column
 
 # Now we're left with a single "observation" (status, mean intensity value if
 # at least one observer reported it) for each plant, phenophase, and year
 
+# Aggregate data for each plant-date combination ------------------------------#
 
+# To make it easier to find inconsistencies in the data and to calculate the 
+# number of open flowers when both intensity values were provided, we'll create 
+# a new dataframe where each row contains all information about a individual 
+# plant on a given day
 
-
-# Put data into wide form -----------------------------------------------------#
-
-# To make it easier to find data entry problems and calculate the number of open
-# flowers when both intensity values were provided, we'll create a new dataframe
-# where each row contains all information an observer collected about an
-# individual plant on a given day
-
-
-# Convert status information into wide form, with each row containing all 
-# data recorded by an observer of a given plant on a given day
+# Convert status information into wide form (fl_s = status of flowers 
+# phenophase; fo_s = status of open flowers phenophase)
 pstatus <- df %>%
-  select(-c(observation_id, phenophase_id, intensity_value, midpoint)) %>%
+  select(-c(phenophase_id, midpoint, n_obs)) %>%
   pivot_wider(names_from = phenophase_description,
               values_from = phenophase_status) %>%
   data.frame() %>%
-  rename(flowers_s = Flowers.or.flower.buds,
-         flowers_open_s = Open.flowers)
+  rename(fl_s = Flowers.or.flower.buds,
+         fo_s = Open.flowers)
 
-# Convert intensity information into wide form, with each row containing all 
-# data recorded by an observer of a given plant on a given day
+# Convert intensity information into wide form (fl_i = number of flowers
+# midpoint; fo_i = proportion of flowers open midpoint)
 pint <- df %>%
-  select(-c(observation_id, phenophase_id, phenophase_status, intensity_value)) %>%
+  select(-c(phenophase_id, phenophase_status, n_obs)) %>%
   pivot_wider(names_from = phenophase_description,
               values_from = midpoint) %>%
   data.frame() %>%
-  rename(flowers_i = Flowers.or.flower.buds,
-         flowers_open_i = Open.flowers)
+  rename(fl_i = Flowers.or.flower.buds,
+         fo_i = Open.flowers)
 
 # Merge status and intensity dataframes
 obs <- left_join(pstatus, pint)
 
-# Address any inconsistencies -------------------------------------------------#
+# Address inconsistencies -----------------------------------------------------#
 
-# If there was no flowers status obs (= NA), but open flowers = 1, change 
+# If there was no flowers status data (= NA), but open flowers = 1, change 
 # flowers status to 1
-obs$flowers_s[is.na(obs$flowers_s) & obs$flowers_open_s == 1] <- 1
+obs$fl_s[is.na(obs$fl_s) & obs$fo_s == 1] <- 1
 
 # If observers said no to flowers (0) but yes to open flowers (1):
   # Make flower status = 1 if there's an intensity value for open flowers or if
@@ -298,95 +293,17 @@ obs$flowers_s[is.na(obs$flowers_s) & obs$flowers_open_s == 1] <- 1
   # because the open flower status is questionable.
   
   # Check before running this:
-    count(obs, flowers_s, flowers_open_s, is.na(flowers_open_i),
-          day_of_year %in% 100:300)
-  # Looks like they'll be just two observations left where the open flower 
-  # status is questionable.
+    count(obs, fl_s, fo_s, is.na(fo_i), day_of_year %in% 100:300)
+    # Very few observations left where the open flower status is questionable
   
 obs <- obs %>%
-  mutate(flowers_s = case_when(
-    flowers_s == 0 & flowers_open_s == 1 & 
-      (!is.na(flowers_open_i) | day_of_year %in% 100:300) ~ 1,
-    .default = flowers_s)
+  mutate(fl_s = case_when(
+    fl_s == 0 & fo_s == 1 & (!is.na(fo_i) | day_of_year %in% 100:300) ~ 1,
+    .default = fl_s)
   )
 obs <- obs %>%
-  filter(!(!is.na(flowers_s) & !is.na(flowers_open_s) & 
-             flowers_s == 0 & flowers_open_s == 1))
+  filter(!(!is.na(fl_s) & !is.na(fo_s) & fl_s == 0 & fo_s == 1))
 
-# Looks like no observations with flowers_s = NA and flowers_open_s = 0 have
-# intensity values for open flowers, so we can leave as is.
-
-# Need to identify where we have multiple observations of the same plant on the
-# same date (by different observers, since we've already taken care of multiple
-# observations by the same observer). Where status is 1, we could calculate the
-# mean of intensity values. However, I think it's a problem if different 
-# observers reported different phenophase statuses for the same plant on the 
-# same date, whether we're characterizing peak flowering or open flower 
-# phenophases.  
-
-# Create indicators for entries that have intensity values
-obs <- obs %>%
-  arrange(species_id, individual_id, observation_date, 
-          desc(flowers_s), desc(flowers_open_s), desc(flowers_open_i)) %>%
-  mutate(fl_i_bin = if_else(is.na(flowers_i), 0, 1),
-         fo_i_bin = if_else(is.na(flowers_open_i), 0, 1),
-         both_i = fl_i_bin * fo_i_bin) %>%
-  group_by(individual_id, observation_date) %>%
-  mutate(n_obs = n()) %>%
-  ungroup() %>%
-  data.frame()
-
-# Look at these extreme examples to highlight variation in observations! Does
-# it even make sense to average intensity values? And if we do take averages, 
-# are we averaging over set of flower intensity values and then averaging over 
-# set of open flower intensity values even if they came from different people?
-# If we're going to calculate the nubmer of open flowers, then should we do
-# that first for any observation that had both intensity values, then average?
-filter(obs, n_obs == 10)
-filter(obs, n_obs == 9)
-filter(obs, n_obs == 6)
-filter(obs, n_obs == 5)
-
-
-
-plantdate <- obs %>%
-  group_by(individual_id, observation_date) %>%
-  filter(n() > 1) %>%
-  summarize(fl_s_min = if_else(all(is.na(flowers_s)), NA, 
-                               min(flowers_s, na.rm = TRUE)),
-            fl_s_max = if_else(all(is.na(flowers_s)), NA, 
-                               max(flowers_s, na.rm = TRUE)),
-            .groups = "keep") %>%
-  data.frame()
-
-
-
-            fl_s_min = if_else(all(is.na(flowers_s)), NA, 
-                               min(flowers_s, na.rm = TRUE)),
-            fl_s_max = if_else(all(is.na(flowers_s)), NA, 
-                               max(flowers_s, na.rm = TRUE)),
-            fo_s_min = if_else(all(is.na(flowers_open_s)), NA, 
-                               min(flowers_s, na.rm = TRUE)),
-            fo_s_max = if_else(all(is.na(flowers_open_s)), NA, 
-                               max(flowers_s, na.rm = TRUE)),
-            .groups = "keep") %>%
-  data.frame() %>%
-  mutate(flowers_same = if_else(fl_s_min == fl_s_max, 1, 0),
-         flowers_open_same = if_else(fo_s_min == fo_s_max, 1, 0))
-
-  
-  
-  
-  # Calculate number of observations
-  mutate(n_obs = n()) %>%
-  # Create indicator to see whether flower/open flower status is consistent
-  
-  
-  mutate(flowers_s_same = ifelse(length(unique(flowers_s)) == 1, 1, 0),
-         flowers_open_s_same = ifelse(length(unique(flowers_open_s)) == 1, 1, 0)) %>%
-  ungroup() %>%
-  data.frame()
-
-
-
+# Looks like no observations with fl_s = NA and fo_s = 0 have intensity values 
+# for open flowers, so we can leave as is.
 
