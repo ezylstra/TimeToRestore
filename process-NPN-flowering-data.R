@@ -1,5 +1,5 @@
 ################################################################################
-# Estimating peak flowering
+# Download and process NPN flowering data (status and intensities)
 
 # Downloads and cleans NPN flowering status data for priority species,
 # summarizes data for each plant and date when any observations were made.  
