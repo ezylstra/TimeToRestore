@@ -116,7 +116,7 @@ df %>% filter(state == "-9999") %>% count(common_name)
   # Deleting since phenology could be very different there.
 df <- filter(df, state != "-9999")
 
-# Check if any coordinate are problematic otherwise, using the maps package
+# Check if any coordinates are problematic otherwise, using the maps package
 # to identify state by lat/lon
 df <- df %>%
   mutate(state_name = maps::map.where("state", df$longitude, df$latitude)) %>%
@@ -259,7 +259,7 @@ df <- df %>%
 
 # To make it easier to find inconsistencies in the data and to calculate the 
 # number of open flowers when both intensity values were provided, we'll create 
-# a new dataframe where each row contains all information about a individual 
+# a new dataframe where each row contains all information about an individual 
 # plant on a given day
 
 # Convert status information into wide form (fl_s = status of flowers 
@@ -336,4 +336,3 @@ obs <- obs %>%
 write.csv(obs, 
           "data/flower-status-intensities-priorityspp.csv", 
           row.names = FALSE)
-
