@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-06
+# 2024-05-14
 ################################################################################
 
 require(dplyr)
@@ -15,10 +15,37 @@ require(tidyr)
 
 rm(list = ls())
 
-# Load processed NPN status/intensity data
+# Load processed NPN status/intensity data ------------------------------------#
 df <- read.csv("data/flower-status-intensities-priorityspp.csv")
 
-# Characterize peak flowering -------------------------------------------------#
+# Summarize the amount of information available for each plant, year ----------#
+samples <- df %>%
+  group_by(common_name, individual_id, state, year) %>%
+  summarize(n_obs = n(),                    # No. of daily observations
+            n_obs_fls = sum(!is.na(fl_s)),  # No. of flower status obs
+            n_obs_fos = sum(!is.na(fo_s)),  # No. of open flower status obs
+            n_obs_fli = sum(!is.na(fl_i)),  # No. of flower intensity values
+            n_obs_foi = sum(!is.na(fo_i)),  # No. of open flower intensity values
+            n_obs_peak = sum(!is.na(fl_i) & !is.na(fo_i)), # No. of peak values
+            .groups = "keep") %>%
+  data.frame()
+
+# Characterize "peak" flowering -----------------------------------------------#
+# Based on estimated number of open flowers
+
+# First, look at how many plant-years have >1 estimate of the number of open
+# flowers, by species
+count(filter(samples, n_obs_peak > 1), common_name)
+  # Range = 2-152, median = 18. 
+  # Ten species that have >20 plant-years with 2 or more estimates, but note
+  # we haven't restricted things geographically.
+
+# Then, look how many plant-years in 4 target states have >0 or >1 estimates
+count(filter(samples, n_obs_peak > 0 & state %in% c("TX", "LA", "OK", "NM")), 
+      common_name)
+count(filter(samples, n_obs_peak > 1 & state %in% c("TX", "LA", "OK", "NM")), 
+      common_name)
+  # Only buttonbush and sunflower have >7 plant-years
 
 # Remove plant-year combinations where we have no estimates of the number of 
 # open flowers
@@ -35,15 +62,15 @@ peak_df <- peak_df %>%
   ungroup() %>%
   data.frame()
 
-# Select what criteria we'll use to delineate "peak" flowering:
+# Select criteria we'll use to delineate whether observation is part of "peak"
 # 1) estimated number of open flowers within x% of the maximum value for that
 #    plant and year,
 # 2) criteria above OR estimated number of open flowers > 500.
 # peak_def <- "near max"
 peak_def <- "near max or over 500"
 
-# Identify the percentage threshold of open flowers, above which, will be
-# considered peak flowering.
+# Identify the "threshold" amount of open flowers (%, relative to the max), 
+# above which, will be considered peak flowering.
 threshold <- 0.75
 
 # Classify observations of plant on particular date as in peak or not
@@ -62,12 +89,13 @@ if (peak_def == "near max") {
     mutate(peak = ifelse(near_max == 1 | over_500 == 1, 1, 0))
 }
 # checks:
-# head(filter(peak_df, near_max == 0 & over_500 == 1))
-# head(filter(peak_df, near_max == 1 & over_500 == 0))
-# head(filter(peak_df, near_max == 1 & over_500 == 1))
+head(filter(peak_df, near_max == 0 & over_500 == 1))
+head(filter(peak_df, near_max == 1 & over_500 == 0))
+head(filter(peak_df, near_max == 1 & over_500 == 1))
   
-# Will create a new dataframe (peaks) with estimates of onset/end/duration for 
-# each plant, year
+# Will create a new dataframe (peaks) with summaries of data for each plant,
+# year, including the number of daily observations and estimates of 
+# peak onset/end/duration for each plant, year
 peaks <- peak_df %>%
   filter(peak == 1) %>%
   group_by(site_id, common_name, individual_id, year) %>%
@@ -77,10 +105,10 @@ peaks <- peak_df %>%
   mutate(peak_duration = peak_end - peak_onset + 1) %>%
   data.frame()
 
-# Want to identify whether peak flowering phenophase was discontinuous or not
+# Identify whether peak flowering phenophase was discontinuous or not
 # Note that if there was no estimated number of open flowers (num_open = NA)
 # between two observations that were considered part of the peak we will
-# consider the peak continuous (ie,need a non-NA value of num_open between peak
+# consider the peak continuous (ie, need a non-NA value of num_open between peak
 # observations to consider the peak discontinuous). 
 peaks$peak_discontinuous <- NA
 for (i in 1:nrow(peaks)) {
@@ -94,10 +122,3 @@ for (i in 1:nrow(peaks)) {
     filter(!is.na(num_open))
   peaks$peak_discontinuous[i] <- ifelse(any(peak_df_sub$peak == 0), 1, 0)
 }
-
-
-
-# New column holds phenophase - Open Flowers
-int_pmetric$phenophase_description <- "Open Flowers"
-int_pmetric$phenophase_id <- 501
-
