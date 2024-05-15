@@ -122,3 +122,11 @@ for (i in 1:nrow(peaks)) {
     filter(!is.na(num_open))
   peaks$peak_discontinuous[i] <- ifelse(any(peak_df_sub$peak == 0), 1, 0)
 }
+
+# Attach relevant sample sizes
+peaks <- peaks %>%
+  left_join(select(samples, -common_name), by = c("individual_id", "year"))
+count(peaks, common_name)
+
+# Characterize flower phenophase ----------------------------------------------#
+
