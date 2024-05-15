@@ -2,114 +2,107 @@
 # Exploring priority plant species
 
 # Erin Zylstra
-# 2024-05-02
+# 2024-05-15
 ################################################################################
 
 library(rnpn)
 library(dplyr)
+library(tidyr)
 
-# Load csv with plant species that received votes from one or more states
+# Load csv with plant species that received votes from one or more states in
+# original or "revisited" spreadsheets.
 spp <- read.csv("data/species-with-votes.csv", na.strings = c(NA, ""))
 
-# 8 species have been designated as "top priority" with priority_level == 1
-# Will make some rules to determine priority level for the rest
-spp <- spp %>%
-  mutate(rvote_LA = ifelse(revisit_votes_LA > 0, 1, 0),
-         rvote_OK = ifelse(revisit_votes_OK > 0, 1, 0),
-         rvote_NM = ifelse(revisit_votes_NM > 0, 1, 0),
-         rvote_TX = ifelse(revisit_votes_TX > 0, 1, 0)) %>%
-  mutate(revisit_nstates = ifelse(is.na(revisit_votes_LA), 0,
-                                  rvote_LA + rvote_NM + rvote_OK + rvote_TX)) %>%
-  mutate(v_LA = ifelse(is.na(votes_LA), 0, votes_LA),
-         v_OK = ifelse(is.na(votes_OK), 0, votes_OK),
-         v_NM = ifelse(is.na(votes_NM), 0, votes_NM)) %>%
-  mutate(votes_high = ifelse(v_LA > 1 | v_OK > 1 | v_NM > 1, 1, 0)) %>%
-  mutate(v_LA = ifelse(v_LA > 0, 1, 0),
-         v_OK = ifelse(v_OK > 0, 1, 0),
-         v_NM = ifelse(v_NM > 0, 1, 0)) %>%
-  mutate(votes_nstates = v_LA + v_OK + v_NM) %>%
-  select(-c(rvote_LA, rvote_OK, rvote_NM, rvote_TX, v_LA, v_OK, v_NM))
-# checks:
-# select(spp, c(common_name, genus, species, votes_LA, votes_OK, votes_NM,
-#               votes_high, votes_nstates))
-# select(spp, c(common_name, genus, species, revisit_votes_LA, revisit_votes_OK, 
-#               revisit_votes_NM, revisit_votes_TX, revisit_nstates)) %>%
-#   count(revisit_votes_LA, revisit_votes_OK, revisit_votes_NM, revisit_votes_TX, 
-#         revisit_nstates)
-
-# Adding information indicating which species were included in previous work 
-# that was done with "16 priority species"
-old16 <- read.csv("data/old/previous-16-priority-species.csv")
-spp <- spp %>%
-  mutate(prev16 = ifelse(common_name %in% old16$common_name, 1, 0))
-
-# For now, classifying things as priority 2 if had multiple states voted species 
-# a priority; priority 3 if it was considered one of top 16 priority species in 
-# previous iterations of the work; priority 4 if two or more people in a state 
-# voted species a priority, and priority 5 are species where only a single 
-# person in one state considered the species a priority
-
-spp <- spp %>%
-  mutate(priority_level = ifelse(is.na(priority_level), 0, priority_level)) %>%
-  mutate(priority = ifelse(priority_level == 1, 1,
-                           ifelse(votes_nstates > 1 | revisit_nstates > 1, 2,
-                                  ifelse(prev16 == 1, 3,
-                                         ifelse(votes_high == 1, 4, 5)))))
-# check:  
-# count(spp, priority, priority_level, votes_nstates, revisit_nstates, 
-#       prev16, votes_high)
-
-count(spp, priority)
-  # priority 1: 8
-  # priority 2: 15
-  # priority 3: 5
-  # priority 4: 21
-  # priority 5: 45
-
-# Change entries with species = NA to species = "spp."
+# Replace missing species epithets with "spp." and replace NAs with 0s in
+# priority_level column
 spp <- spp %>%
   mutate(species = ifelse(is.na(species), "spp.", species)) %>%
-  select(-priority_level)
+  mutate(priority_level = replace_na(priority_level, 0))
 
-# See how many of the entries with/without a species name are high priority:
-count(filter(spp, species != "spp."), priority)
-  # If we exclude the spp's:
-  # priority 1: 8
-  # priority 2: 13
-  # priority 3: 5
-  # priority 4: 17
-  # priority 5: 40
-filter(spp, species == "spp.", priority == 2)
-  # Excluding Liatris spp (note that L. aspera is in priority 1 category)
-  # Excluding Solidago spp (note that S. rugosa is in priority 2 category)
-
-# Create high-priority species list (levels 1:3)
-spp_hp <- spp %>%
-  filter(species != "spp." & priority %in% 1:3)
-
-# Dataframe with species in NPN database
-species_list <- npn_species() %>% 
-  rename(NPN_common_name = common_name) %>%
-  select(species_id, NPN_common_name, genus, species) %>%
+# Create rvote column indicating if species got any votes in revisited spreadsheet
+spp <- spp %>%
+  rowwise() %>% 
+  mutate(rvote_sum = sum(c_across(starts_with("revisit")))) %>%
+  ungroup() %>%
+  mutate(rvote = ifelse(!is.na(rvote_sum) & rvote_sum > 0, 1, 0)) %>%
+  select(-rvote_sum) %>%
   data.frame()
 
-# Match priority species with NPN species
-spp_hp <- spp_hp %>%
-  left_join(species_list, by = c("genus", "species"))
-filter(spp_hp, is.na(species_id))
-# Just one high priority species that doesn't appear in NPN database: 
-# Coreopsis tinctoria (golden tickseed). Priority 2: 1 vote in LA and NM
+# Add up the total number of votes (across states) that each species received in 
+# original spreadsheets for LA, OK, NM
+spp <- spp %>%
+  rowwise() %>%
+  mutate(nvotes_orig = sum(c_across(starts_with("votes")), na.rm = TRUE)) %>%
+  ungroup() %>%
+  data.frame()
 
-# Simplify state information
-spp_hp <- spp_hp %>%
-  mutate(LA = ifelse((!is.na(votes_LA) & votes_LA > 0) |
-                       (!is.na(revisit_votes_LA) & revisit_votes_LA > 0), 1, 0)) %>%
-  mutate(OK = ifelse((!is.na(votes_OK) & votes_OK > 0) |
-                       (!is.na(revisit_votes_OK) & revisit_votes_OK > 0), 1, 0)) %>%
-  mutate(NM = ifelse((!is.na(votes_NM) & votes_NM > 0) |
-                       (!is.na(revisit_votes_NM) & revisit_votes_NM > 0), 1, 0)) %>%
-  mutate(TX = ifelse(!is.na(revisit_votes_TX) & revisit_votes_TX > 0, 1, 0)) %>%
-  select(common_name, genus, species, species_id, LA, OK, NM, TX, priority)
+# Append indicator of which species were included in previous work with 
+# "16 priority species"
+old16 <- read.csv("data/old/previous-16-priority-species.csv")
+old16 <- old16 %>%
+  select(genus, species) %>%
+  mutate(prev16 = 1)
+spp <- spp %>%
+  left_join(old16, by = c("genus", "species")) %>%
+  mutate(prev16 = replace_na(prev16, 0))
 
-# Write to file
-# write.csv(spp_hp, "data/priority-species.csv", row.names = FALSE)
+# 8 species have been designated as "top priority" with priority_level == 1.
+# Making rules to classify the rest of the species:
+# priority 2: received one or more vote in revisited spreadsheet (rvote == 1)
+# priority 3: was in previous group of 16 priority species
+# priority 4: received multiple votes in original spreadsheets (nvotes_orig > 1)
+# priority 5: none of the above.
+spp <- spp %>%
+  mutate(
+    priority = case_when(
+      priority_level == 1 ~ 1,
+      rvote == 1 ~ 2,
+      prev16 == 1 ~ 3,
+      nvotes_orig > 1 ~ 4,
+      .default = 5
+    )
+  )
+# checks:
+count(spp, priority, priority_level, rvote, prev16, nvotes_orig)
+count(spp, priority)
+  # priority 1: 8 spp
+  # priority 2: 19 spp
+  # priority 3: 6 spp
+  # priority 4: 26 spp
+  # priority 5: 36 spp
+
+# Create dataframe with species in NPN database
+species_list <- npn_species() %>% 
+  select(species_id, common_name, genus, species) %>%
+  data.frame()
+
+# Just work with priority 1-4 for now.
+hp <- filter(spp, priority < 5)
+
+# Match up priority species with NPN database entries. Make the NPN common name
+# the primary one and the common name in state spreadsheets secondary.
+hp <- hp %>%
+  rename(common_name_states = common_name) %>%
+  left_join(species_list, by = c("genus", "species")) %>%
+  relocate(common_name_states, .after = "common_name")
+
+# Create separate dataframe for taxa that don't have specific epithets
+hp_genus <- filter(hp, species == "spp.")
+
+# For now, just retain genus-level taxa if they were priority 1 or 2 and 
+# replace each row with all NPN species in that genus
+hp_genus <- hp_genus %>%
+  filter(priority < 3) %>%
+  select(-c(species, species_id, common_name)) %>%
+  left_join(species_list, by = "genus") %>%
+  relocate(species, .after = "genus") %>%
+  relocate(common_name_states, .after = "common_name")
+
+# Remove spp's from hp dataframe and remove unnecessary column
+hp <- hp %>%
+  filter(species != "spp.") %>%
+  select(-priority_level)
+
+# Write dataframes to file, keeping taxa without specific epithets separate
+# write.csv(hp, "data/priority-species.csv", row.names = FALSE)
+# write.csv(hp_genus, "data/priority-genera.csv", row.names = FALSE)

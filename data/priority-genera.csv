@@ -1,0 +1,22 @@
+"genus","species","votes_LA","votes_OK","votes_NM","revisit_votes_LA","revisit_votes_OK","revisit_votes_NM","revisit_votes_TX","priority_level","rvote","nvotes_orig","prev16","priority","species_id","common_name","common_name_states"
+"Liatris","spicata",NA,NA,NA,1,0,1,1,0,1,0,0,2,912,"dense blazing star","blazing star"
+"Liatris","punctata",NA,NA,NA,1,0,1,1,0,1,0,0,2,1989,"dotted blazing star","blazing star"
+"Liatris","tenuis",NA,NA,NA,1,0,1,1,0,1,0,0,2,1991,"Gulf blazing star","blazing star"
+"Liatris","elegans",NA,NA,NA,1,0,1,1,0,1,0,0,2,911,"pinkscale blazing star","blazing star"
+"Liatris","tenuifolia",NA,NA,NA,1,0,1,1,0,1,0,0,2,1990,"shortleaf blazing star","blazing star"
+"Liatris","aspera",NA,NA,NA,1,0,1,1,0,1,0,0,2,204,"tall blazing star","blazing star"
+"Monarda","didyma",NA,NA,NA,1,0,0,0,0,1,0,0,2,1186,"scarlet beebalm",NA
+"Monarda","clinopodia",NA,NA,NA,1,0,0,0,0,1,0,0,2,2146,"white bergamot",NA
+"Monarda","fistulosa",NA,NA,NA,1,0,0,0,0,1,0,0,2,931,"wild bergamot",NA
+"Solidago","uliginosa",NA,NA,NA,1,0,0,1,0,1,0,0,2,1028,"bog goldenrod","goldenrod"
+"Solidago","canadensis",NA,NA,NA,1,0,0,1,0,1,0,0,2,1643,"Canada goldenrod","goldenrod"
+"Solidago","altissima",NA,NA,NA,1,0,0,1,0,1,0,0,2,1694,"Canada goldenrod","goldenrod"
+"Solidago","juncea",NA,NA,NA,1,0,0,1,0,1,0,0,2,2175,"early goldenrod","goldenrod"
+"Solidago","missouriensis",NA,NA,NA,1,0,0,1,0,1,0,0,2,186,"Missouri goldenrod","goldenrod"
+"Solidago","simplex",NA,NA,NA,1,0,0,1,0,1,0,0,2,2074,"Mt. Albert goldenrod","goldenrod"
+"Solidago","fistulosa",NA,NA,NA,1,0,0,1,0,1,0,0,2,2073,"pine barren goldenrod","goldenrod"
+"Solidago","sempervirens",NA,NA,NA,1,0,0,1,0,1,0,0,2,747,"seaside goldenrod","goldenrod"
+"Solidago","rigida",NA,NA,NA,1,0,0,1,0,1,0,0,2,205,"stiff goldenrod","goldenrod"
+"Solidago","stricta",NA,NA,NA,1,0,0,1,0,1,0,0,2,1027,"wand goldenrod","goldenrod"
+"Solidago","caesia",NA,NA,NA,1,0,0,1,0,1,0,0,2,1770,"wreath goldenrod","goldenrod"
+"Solidago","rugosa",NA,NA,NA,1,0,0,1,0,1,0,0,2,299,"wrinkleleaf goldenrod","goldenrod"

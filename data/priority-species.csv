@@ -1,27 +1,53 @@
-"common_name","genus","species","species_id","LA","OK","NM","TX","priority"
-"showy milkweed","Asclepias","speciosa",224,0,1,1,0,1
-"green antelopehorn","Asclepias","viridis",200,1,1,0,1,1
-"common buttonbush","Cephalanthus","occidentalis",201,1,1,0,0,1
-"eastern purple coneflower","Echinacea","purpurea",202,1,1,1,0,1
-"common sunflower","Helianthus","annuus",203,0,1,1,0,1
-"tall blazing star","Liatris","aspera",204,1,1,1,1,1
-"cardinalflower","Lobelia","cardinalis",916,1,1,1,0,1
-"wild bergamot","Monarda","fistulosa",931,1,1,1,0,1
-"spider milkweed","Asclepias","asperula",223,0,1,1,1,2
-"swamp milkweed","Asclepias","incarnata",197,0,1,0,0,3
-"broadleaf milkweed","Asclepias","latifolia",1332,0,1,1,0,2
-"aquatic milkweed","Asclepias","perennis",1334,1,0,0,0,3
-"butterfly milkweed","Asclepias","tuberosa",195,1,1,1,1,2
-"wavy-leaved thistle","Cirsium","undulatum",2118,0,1,0,1,2
-"lanceleaf tickseed","Coreopsis","lanceolata",1606,1,1,0,0,2
-"tickseed","Coreopsis","tinctoria",NA,1,0,1,0,2
-"purple prairie clover","Dalea","purpurea",845,0,1,1,0,2
-"rattlesnake master","Eryngium","yuccifolium",1814,1,1,0,0,2
-"pinkscale blazing star","Liatris","elegans",911,1,1,0,0,2
-"blackeyed Susan","Rudbeckia","hirta",1637,0,1,1,0,2
-"Goodding's willow","Salix","gooddingii",1163,0,0,1,0,3
-"wrinkleleaf goldenrod","Solidago","rugosa",299,1,1,0,0,2
-"Missouri goldenrod","Solidago","missouriensis",186,0,0,1,0,3
-"white heath aster","Symphyotrichum","ericoides",207,1,1,1,0,2
-"New England aster","Symphyotrichum","novae-angliae",1034,1,1,0,0,2
-"golden crownbeard","Verbesina","encelioides",1167,0,1,0,0,3
+"genus","species","votes_LA","votes_OK","votes_NM","revisit_votes_LA","revisit_votes_OK","revisit_votes_NM","revisit_votes_TX","rvote","nvotes_orig","prev16","priority","species_id","common_name","common_name_states"
+"Asclepias","speciosa",0,1,3,NA,NA,NA,NA,0,4,1,1,224,"showy milkweed","showy milkweed"
+"Asclepias","viridis",2,2,0,0,3,0,1,1,4,1,1,200,"green antelopehorn","green antelopehorn"
+"Cephalanthus","occidentalis",3,2,0,NA,NA,NA,NA,0,5,1,1,201,"common buttonbush","common buttonbush"
+"Echinacea","purpurea",1,3,1,NA,NA,NA,NA,0,5,1,1,202,"eastern purple coneflower","eastern purple coneflower"
+"Helianthus","annuus",0,2,3,NA,NA,NA,NA,0,5,1,1,203,"common sunflower","common sunflower"
+"Liatris","aspera",1,3,1,0,0,0,1,1,5,1,1,204,"tall blazing star","tall blazing star"
+"Lobelia","cardinalis",3,2,2,NA,NA,NA,NA,0,7,1,1,916,"cardinalflower","cardinalflower"
+"Monarda","fistulosa",3,4,4,NA,NA,NA,NA,0,11,1,1,931,"wild bergamot","wild bergamot"
+"Acer","rubrum",NA,NA,NA,1,0,0,0,1,0,0,2,3,"red maple","red maple"
+"Asclepias","asperula",NA,1,3,0,3,0,1,1,4,0,2,223,"spider milkweed","spider milkweed"
+"Asclepias","incarnata",NA,3,NA,NA,NA,NA,NA,0,3,1,3,197,"swamp milkweed","swamp milkweed"
+"Asclepias","latifolia",NA,1,1,NA,NA,NA,NA,0,2,0,4,1332,"broadleaf milkweed","broadleaf milkweed"
+"Asclepias","perennis",3,NA,NA,1,0,0,0,1,3,1,2,1334,"aquatic milkweed","aquatic milkweed"
+"Asclepias","subverticillata",NA,NA,3,NA,NA,NA,NA,0,3,0,4,1336,"horsetail milkweed","horsetail milkweed"
+"Asclepias","syriaca",NA,2,NA,NA,NA,NA,NA,0,2,0,4,199,"common milkweed","common milkweed"
+"Asclepias","tuberosa",NA,1,2,1,2,0,1,1,3,0,2,195,"butterfly milkweed","butterfly milkweed"
+"Baccharis","halimifolia",1,NA,NA,1,0,0,0,1,1,0,2,804,"eastern baccharis","eastern baccharis"
+"Centaurea","americana",NA,2,NA,NA,NA,NA,NA,0,2,0,4,NA,NA,"basket flower"
+"Cirsium","altissimum",NA,2,NA,NA,NA,NA,NA,0,2,0,4,NA,NA,"tall thistle"
+"Cirsium","neomexicanum",NA,NA,2,NA,NA,NA,NA,0,2,0,4,NA,NA,"New Mexico thistle"
+"Cirsium","undulatum",NA,NA,NA,0,2,0,1,1,0,0,2,2118,"wavyleaf thistle","wavy-leaved thistle"
+"Cleome","serrulata",NA,NA,4,NA,NA,NA,NA,0,4,0,4,NA,NA,"Rocky Mountain bee plant"
+"Conoclinium","coelestinum",2,NA,NA,1,0,0,0,1,2,0,2,NA,NA,"blue mistflower"
+"Coreopsis","lanceolata",1,2,NA,NA,NA,NA,NA,0,3,0,4,1606,"lanceleaf tickseed","lanceleaf tickseed"
+"Coreopsis","tinctoria",1,NA,1,NA,NA,NA,NA,0,2,0,4,NA,NA,"tickseed"
+"Dalea","purpurea",NA,2,2,NA,NA,NA,NA,0,4,1,3,845,"purple prairie clover","purple prairie clover"
+"Ericameria","nauseosa",NA,NA,2,NA,NA,NA,NA,0,2,0,4,436,"rubber rabbitbrush","chamisa"
+"Eryngium","yuccifolium",2,NA,NA,1,1,0,0,1,2,0,2,1814,"button eryngo","rattlesnake master"
+"Helianthus","angustifolius",1,NA,NA,1,0,0,0,1,1,0,2,2254,"swamp sunflower","narrow leaf / swamp sunflower"
+"Helianthus","petiolaris",NA,NA,2,NA,NA,NA,NA,0,2,0,4,NA,NA,"prairie sunflower"
+"Heterotheca","villosa",NA,NA,3,NA,NA,NA,NA,0,3,0,4,1978,"hairy false goldenaster","hairy goldenaster"
+"Liatris","elegans",2,1,NA,NA,NA,NA,NA,0,3,0,4,911,"pinkscale blazing star","pinkscale blazing star"
+"Lonicera","sempervirens",NA,NA,NA,1,0,0,0,1,0,0,2,920,"trumpet honeysuckle","coral honeysuckle"
+"Monarda","citriodora",2,NA,NA,NA,NA,NA,NA,0,2,0,4,NA,NA,NA
+"Oenothera","cespitosa",NA,NA,NA,0,0,1,0,1,0,0,2,179,"tufted evening primrose","tufted evening primrose"
+"Passiflora","incarnata",1,NA,NA,1,0,0,0,1,1,0,2,182,"purple passionflower","maypop"
+"Ratibida","columnifera",NA,NA,2,1,0,0,0,1,2,0,2,991,"upright prairie coneflower","prairie coneflower / Mexican hat"
+"Rudbeckia","hirta",NA,2,1,NA,NA,NA,NA,0,3,0,4,1637,"blackeyed Susan","blackeyed Susan"
+"Salvia","lyrata",2,NA,NA,NA,NA,NA,NA,0,2,0,4,2166,"lyreleaf sage","lyre-leaf sage"
+"Salix","gooddingii",NA,NA,3,NA,NA,NA,NA,0,3,1,3,1163,"Goodding's willow","Goodding's willow"
+"Sambucus","nigra",NA,NA,NA,1,0,0,0,1,0,0,2,90,"black elderberry","common elderberry"
+"Solidago","rugosa",2,1,NA,NA,NA,NA,NA,0,3,0,4,299,"wrinkleleaf goldenrod","wrinkleleaf goldenrod"
+"Solidago","altissima",2,NA,NA,NA,NA,NA,NA,0,2,0,4,1694,"Canada goldenrod","common goldenrod"
+"Solidago","missouriensis",NA,NA,3,NA,NA,NA,NA,0,3,1,3,186,"Missouri goldenrod","Missouri goldenrod"
+"Solidago","odora",2,NA,NA,NA,NA,NA,NA,0,2,0,4,NA,NA,"sweet goldenrod"
+"Solidago","sempervirens",2,NA,NA,NA,NA,NA,NA,0,2,0,4,747,"seaside goldenrod","seaside goldenrod"
+"Sphaeralcea","angustifolia",NA,NA,NA,0,0,2,0,1,0,0,2,NA,NA,"copper globe mallow"
+"Symphyotrichum","ericoides",1,2,1,NA,NA,NA,NA,0,4,1,3,207,"white heath aster","white heath aster"
+"Symphyotrichum","novae-angliae",1,2,NA,NA,NA,NA,NA,0,3,0,4,1034,"New England aster","New England aster"
+"Verbesina","encelioides",NA,3,NA,NA,NA,NA,NA,0,3,1,3,1167,"golden crownbeard","golden crownbeard"
+"Verbesina","virginica",NA,2,NA,NA,NA,NA,NA,0,2,0,4,208,"white crownbeard","frostweed"
+"Vernonia","gigantea",NA,NA,NA,1,0,0,0,1,0,0,2,NA,NA,"giant ironweed"
