@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-14
+# 2024-05-16
 ################################################################################
 
 require(dplyr)
@@ -20,13 +20,14 @@ df <- read.csv("data/flower-status-intensities-priorityspp.csv")
 
 # Summarize the amount of information available for each plant, year ----------#
 samples <- df %>%
-  group_by(common_name, individual_id, state, year) %>%
+  group_by(common_name, individual_id, partner_group, site_id, site_name, 
+           state, year) %>%
   summarize(n_obs = n(),                    # No. of daily observations
             n_obs_fls = sum(!is.na(fl_s)),  # No. of flower status obs
             n_obs_fos = sum(!is.na(fo_s)),  # No. of open flower status obs
             n_obs_fli = sum(!is.na(fl_i)),  # No. of flower intensity values
             n_obs_foi = sum(!is.na(fo_i)),  # No. of open flower intensity values
-            n_obs_peak = sum(!is.na(fl_i) & !is.na(fo_i)), # No. of peak values
+            n_obs_peak = sum(!is.na(num_open)), # No. of peak values
             .groups = "keep") %>%
   data.frame()
 
@@ -35,17 +36,18 @@ samples <- df %>%
 
 # First, look at how many plant-years have >1 estimate of the number of open
 # flowers, by species
-count(filter(samples, n_obs_peak > 1), common_name)
-  # Range = 2-152, median = 18. 
-  # Ten species that have >20 plant-years with 2 or more estimates, but note
+spp_ss <- count(filter(samples, n_obs_peak > 1), common_name) %>%
+  arrange(desc(n))
+spp_ss
+summary(spp_ss)
+  # Range = 2-1552 (2-295 if you exclude red maple); median = 20. 
+  # 15 species that have >30 plant-years with 2 or more estimates, but note
   # we haven't restricted things geographically.
 
-# Then, look how many plant-years in 4 target states have >0 or >1 estimates
-count(filter(samples, n_obs_peak > 0 & state %in% c("TX", "LA", "OK", "NM")), 
-      common_name)
+# Then, look how many plant-years in 4 target states have >1 estimate
 count(filter(samples, n_obs_peak > 1 & state %in% c("TX", "LA", "OK", "NM")), 
-      common_name)
-  # Only buttonbush and sunflower have >7 plant-years
+      common_name) %>% arrange(desc(n))
+  # Only six species have >10 plant-years
 
 # Remove plant-year combinations where we have no estimates of the number of 
 # open flowers
