@@ -12,7 +12,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-06
+# 2024-05-16
 ################################################################################
 
 require(rnpn)
@@ -21,38 +21,35 @@ require(lubridate)
 require(tidyr)
 require(maps)
 
-rm(list = ls())
-
 # Download and format NPN data for priority plant species ---------------------#
 
-# Load csv with priority plant species
+# Load csv with priority plant species (only those with specific epithets)
 spp <- read.csv("data/priority-species.csv")
   # species_id: NPN species ID
-  # LA, OK, NM, TX: 1/0 indicating whether the species got one or more votes in 
-    # that state based on googlesheets (note that TX votes were only included
-    # in the most recent "revisited" sheet)
-  # priority: priority levels (1 = highest priority, as determined by NPN-TTR
-    # team; 2 = includes species that received votes from multiple states; 3 =
-    # species included in 16-priority list used previously)
+  # votes_ST: number of votes each species received from each state (LA, NM, OK) 
+    # in original working groups
+  # revisit_votes_ST: number of votes each species received from each state in 
+    # "revisited" spreadsheet
+  # rvote (1/0): indicates whether species got >=1 vote in revisited spreadsheet
+  # nvotes_orig: sum of votes for each species in original working groups
+  # prev16 (1/0): indicator whether species was part of previous 16-spp group
+  # priority (1-4): indicator of priority class:
+    # 1: original 8 priority spp
+    # 2: received one or more vote in revisited spreadsheet
+    # 3: in original 16 priority species
+    # 4: received >1 vote (in one or across multiple states) in orignal spreadsheets
+  # species_id: NPN database species ID. NA if species not in database
+  # common_name: common name in NPN database
+  # common_name_states: common name in spreadsheets
 
-# Load information (from other sources) about flowering season
-spp_flower <- read.csv("data/priority-species-flowering-season.csv")
-  # first_flower_ttr: first flowering month based on information on priority
-    # species in TTR google sheets (not sure of original source)
-  # first_flower_UT: first flowering month based on U. Texas - Lady Bird
-    # Johnson wildflower center (https://www.wildflower.org)
-  # first_flower_season: current classification of each species, as spring or 
-    # summer flowering. There are a few that still need to be classified (noted
-    # as spring/summer).
+# Evaluate how many priority species do/don't appear in NPN database
+count(spp, is.na(species_id), priority)
+  # 11/52 species are not in database (priority 2 and 4)
+  # Left with 41 spp (8 priority 1; 13 priority 2; 6 priority 3; 14 priority 4)
 
-# Merge the two:
-spp <- left_join(spp, spp_flower, by = c("common_name", "genus", "species"))
-
-# Remove species that don't have an NPN species_id and format flowering columns
-spp <- spp %>%
-  filter(!is.na(species_id)) %>%
-  mutate(first_flower_ttr = match(first_flower_ttr, month.abb),
-         first_flower_UT = match(first_flower_UT, month.abb))  
+# Remove species that don't have an NPN species_id
+spp <- spp %>% 
+  filter(!is.na(species_id))
 
 # Identify phenophases of interest
 phenophases <- c(500, 501)
@@ -64,39 +61,32 @@ df <- npn_download_status_data(request_source = "erin",
                                years = 2013:2023,
                                species_ids = spp$species_id,
                                phenophase_ids= phenophases,
-                               additional_fields = c("observedby_person_id"),
+                               additional_fields = c("observedby_person_id",
+                                                     "partner_group",
+                                                     "site_id",
+                                                     "site_name"),
                                climate_data = FALSE)
 df <- data.frame(df)
 
 # Quick look at relative amount of data for each species
-  # df %>%
-  #   count(species_id, genus, species, common_name) %>%
-  #   arrange(desc(n))
-# Note that Eryngium yuccifolium is listed as "rattlesnake master" in priority
-# lists, but "button eryngo" in NPN database. And Cirsium undulatum (wavy-leaved
-# thistle) doesn't have any records.
+  df %>%
+    count(species_id, genus, species, common_name) %>%
+    arrange(desc(n))
+  
+  dplyr::setdiff(spp$common_name, unique(df$common_name))
+  # No records for:
+  # wavyleaf thistle (Cirsium undulatum)
+  # swamp sunflower (Helianthus angustifolius)
+  # lyreleaf sage (Salvia lyrata)
 
 # Extract year from date and remove a few columns we don't need
 df <- df %>%
   mutate(year = lubridate::year(observation_date)) %>%
   select(-c(update_datetime, kingdom, intensity_category_id, abundance_value))
 
-# Count number of people who contributed observations of a given plant in a year
-# df <- df %>%
-#   group_by(individual_id, year) %>%
-#   mutate(n_observers = n_distinct(observedby_person_id)) %>%
-#   ungroup() %>%
-#   data.frame()
-
-# Remove rows that are duplicates (ie, same plant, date, phenophase status, 
-# intensity_value), regardless of who reported the data (observedby_person_id)
-df <- df %>% 
-  distinct(individual_id, observation_date, phenophase_description, 
-           phenophase_status, intensity_value, .keep_all = TRUE)
-
 # Clean up phenophase status and state data -----------------------------------#
 
-# Remove any observations with phenophase_status = -1 (unknown), unless there's
+# Remove any observations with phenophase_status = -1 (unknown) unless there's
 # an intensity value, which suggest the phenophase_status was just mis-entered
 df <- df %>%
   mutate(intensity_value = ifelse(intensity_value == "-9999", 
@@ -106,15 +96,28 @@ df <- df %>%
                                     1, phenophase_status)) %>%
   filter(phenophase_status != -1)
 
-# Remove a couple observations with errant state names
-df <- filter(df, state != "Liaoning Sheng")
+# Remove observations that are outside the US based on "state" entry (but 
+# leaving missing values for the moment). Removing HI and AK observations since
+# phenology is likely to be very different in those places.
+df <- df %>%
+  filter(state %in% c(state.abb, "-9999")) %>%
+  filter(!state %in% c("HI", "AK"))
 
 # Look at geographic coordinates when state = "-9999"
-df %>% filter(state == "-9999") %>% select(latitude, longitude) %>% summary()
+df %>% filter(state == "-9999") %>% select(latitude, longitude) %>% distinct()
 df %>% filter(state == "-9999") %>% count(common_name) 
-  # All observations of golden crownbeard on Midway Atoll. 
+  # Just 5 locations, 4 of which are of golden crownbeard on Midway Atoll
+  # Other is in India (might be FL typo, but doesn't really matter)
   # Deleting since phenology could be very different there.
 df <- filter(df, state != "-9999")
+
+# Creating bounding box for lower 48 states and remove any locations beyond that
+# even if a state was provided
+extreme_lats <- c(24, 50)
+extreme_lons <- c(-125, -66)
+df <- df %>%
+  filter(latitude > extreme_lats[1] & latitude < extreme_lats[2]) %>%
+  filter(longitude > extreme_lons[1] & longitude < extreme_lons[2])
 
 # Check if any coordinates are problematic otherwise, using the maps package
 # to identify state by lat/lon
@@ -125,11 +128,14 @@ df <- df %>%
 df %>%
   filter(!is.na(abb) & state != abb) %>%
   count(state, abb)
-  # There are some ND/MN and OH/KY differences, but that's probably not a big
-  # deal since states are adjacent. However, will remove a couple entries with
-  # NPN database listing NM, but lat/lon location is in SC
+  # There are instances where the coordinates fall in different states (based on
+  # the maps package) than the state that was listed in the NPN database, but 
+  # most of the time, it's probably not a big deal since the mismatched states 
+  # are geographically adjacent.  However, there are a few instances where 
+  # either the state listed or coords must be wrong, so will remove those obs.
 df <- df %>% 
-  filter(!(state == "NM" & abb == "SC")) %>%
+  filter(!(!is.na(abb) & state == "NM" & abb == "SC")) %>%
+  filter(!(!is.na(abb) & state == "MN" & abb == "CA")) %>%
   select(-c(state_name, abb))
 
 # Deal with observations of the same plant, phenophase on the same date -------#
@@ -167,10 +173,10 @@ df <- df %>%
   data.frame()
 # count(df, n_records, n_fl, n_fo)
 
-# When an observer appears to have made two observations of a plant phenophase 
-# in one day, will keep the observation with more advanced phenophase, higher 
-# intensity value, or more information. Will do this by sorting observations and 
-# keeping only the first.
+# When an observer appears to have made multiple observations of a plant 
+# phenophase in one day, will keep the observation with more advanced 
+# phenophase, higher intensity value, or more information. Will do this by 
+# sorting observations and keeping only the first.
 obsdatep <- df %>%
   group_by(observedby_person_id, individual_id, observation_date, phenophase_id) %>%
   summarize(n_obs = n(),
@@ -196,64 +202,95 @@ df <- df %>%
   arrange(species_id, observation_date, observedby_person_id, phenophase_id)
 
 # Deal with multiple observations on the same date of the same plant by
-# different observers (~0.3% of plant-phenophase-date combinations)
+# different observers
 datep <- df %>%
-  group_by(individual_id, observation_date, phenophase_id) %>%
+  group_by(individual_id, site_id, site_name, partner_group, 
+           observation_date, phenophase_id) %>%
   summarize(n_obs = n(),
             .groups = "keep") %>%
   data.frame()
 datep$obsnum <- 1:nrow(datep)
 
+# Quantify the extent to which this is occurring:
+sum(datep$n_obs > 1) / nrow(datep) * 100
+  # 6.8% of plant-date-phenophase combinations are associated with observations 
+  # from multiple people. 
+
+# Look at some extreme examples where we have >5 observations of a plant 
+# phenophase in a day
+datep_high <- filter(datep, n_obs > 5)
+count(datep_high, partner_group, site_name)
+  # Lots of site_name = Oak Hill Campus OR Oak Hill High School 2022
+  oh <- filter(df, grepl("Oak Hill", site_name))
+  dim(oh) # 2307 plant phenophase observations
+  count(oh, individual_id, common_name, year)
+  # Lots of partner_group = UNCO BIO 111 & site_name = Red Maple site
+  unco <- filter(df, grepl("UNCO", partner_group))
+  dim(unco) # 27730 plant phenophase observations
+  count(unco, individual_id, common_name, year)
+  # Other groups/sites with many instances of multiple observations per day:
+  # New York Botanical Garden Forest Phenology (group)
+  # Mohonk Preserve (group)
+# Will get the information above to NPN, but for the moment, won't treat these
+# data any different than other observations
+
+# Isolate plant-year combinations where one or more times, a phenophase was 
+# observed by multiple people on the same day.
+yearp <- datep %>%
+  mutate(year = year(observation_date)) %>%
+  group_by(individual_id, year) %>%
+  summarize(multobs = 1 * any(n_obs > 1), .groups = "keep") %>%
+  data.frame()
+yearp_mult <- filter(yearp, multobs == 1)
+
+# For all observers who collected data on a plant in a given year, rank them
+# by the number of observations made.
+for (i in 1:nrow(yearp_mult)) {
+  dfsub <- df %>%
+    filter(individual_id == yearp_mult$individual_id[i]) %>%
+    filter(year == yearp_mult$year[i])
+  obs_count <- count(dfsub, observedby_person_id) %>%
+    arrange(desc(n)) %>%
+    mutate(observer_rank = row_number()) %>%
+    mutate(individual_id = yearp_mult$individual_id[i], 
+           year = yearp_mult$year[i]) 
+  if (i == 1) {
+    obs_rank <- obs_count
+  } else {
+    obs_rank <- rbind(obs_rank, obs_count)
+  }
+}
+# Attach information about duplicate observations to the original dataframe
 df <- df %>%
-  arrange(individual_id, observation_date, phenophase_id, 
-          desc(phenophase_status), desc(midpoint)) %>%
-  left_join(select(datep, -n_obs), 
+  left_join(select(datep, -c(site_id, site_name, partner_group)),
             by = c("individual_id", "observation_date", "phenophase_id")) %>%
-  mutate(dups = sequence(rle(as.character(obsnum))$lengths))
+  left_join(select(obs_rank, -n), 
+            by = c("individual_id", "year", "observedby_person_id"))
+# Check that there's always an observer rank if there are multiple observations
+# of that plant phenophase on that date:
+summary(df$observer_rank[df$n_obs > 1])
+summary(df$n_obs[is.na(df$observer_rank)])
 
-# We can:
-# 1) just select one observation with the most advanced phenology or most info
-# 2) use status = 1 and average over midpoints
-# 3) identify observations when both intensity values were reported and then 
-#    only use those observations to calculate number of open flowers (and 
-#    average across them if there were more than one). Note that it would be 
-#    easiest to have data in wide form to do this.
-# For now, we'll go with option 2 because it better mirrors the approach that 
-# others used previously. 
+# Now we have a couple options:  ########## REVIEW THIS WITH NPN ###############
+# 1) retain one observation of a plant phenophase per day, preferentially
+#    selecting those by people who submitted consistent observations.
+# 2) retain all data, use status = 1 observations, and average over midpoints
+# For now will use Option 1 even though Option 2 is most similar to the approach 
+# that was used previously
 
-# Remove "duplicates" with status == 0
-df <- df %>% filter(!(dups > 1 & phenophase_status == 0))
-
-# Recreate obsnum column now that we've removed observations
-datep <- df %>%
-  group_by(individual_id, observation_date, phenophase_id) %>%
-  summarize(n_obs = n(),
-            .groups = "keep") %>%
-  data.frame()
-datep$obsnum <- 1:nrow(datep)
-
+# Remove all but one observation of a plant phenophase per day
 df <- df %>%
-  select(-c(obsnum, dups)) %>%
-  left_join(datep, by = c("individual_id", "observation_date", "phenophase_id"))
+  # Replace NAs in observer rank with 0 for easier sorting
+  mutate(observer_rank = replace_na(observer_rank, 0)) %>%
+  # Sort dataframe by plant-phenophase-date and then by observer rank
+  arrange(obsnum, observer_rank) %>%
+  # Remove all but one observation and remove unnecessary columns
+  mutate(dups = sequence(rle(as.character(obsnum))$lengths)) %>%
+  filter(dups == 1) %>%
+  select(-c(n_obs, obsnum, observer_rank, dups))
 
-# Calculate mean of intensity midpoints, where reported
-mean_midpoints <- df %>%
-  filter(n_obs > 1) %>%
-  group_by(obsnum) %>%
-  summarize(midpoint_mn = if_else(all(is.na(midpoint)), NA, 
-                                  mean(midpoint, na.rm = TRUE))) %>%
-  data.frame()
-df <- df %>% 
-  left_join(mean_midpoints, by = "obsnum") %>%
-  mutate(midpoint = if_else(is.na(midpoint_mn), midpoint, midpoint_mn)) %>%
-  select(-c(midpoint_mn, observation_id, observedby_person_id, 
-            intensity_value, obsnum)) %>%
-  distinct()
-# Keeping n_obs column to remember how many observers recorded info about that
-# plant and phenophase on that date, but removing the obsnum column
-
-# Now we're left with a single "observation" (status, mean intensity value if
-# at least one observer reported it) for each plant, phenophase, and year
+# Now we're left with a single observation (status, intensity value if
+# observer reported it) for each plant, phenophase, and date
 
 # Aggregate data for each plant-date combination ------------------------------#
 
@@ -262,10 +299,15 @@ df <- df %>%
 # a new dataframe where each row contains all information about an individual 
 # plant on a given day
 
+# First remove columns that won't be needed moving forward
+df <- df %>%
+  select(-c(observation_id, observedby_person_id, 
+            phenophase_id, intensity_value))
+
 # Convert status information into wide form (fl_s = status of flowers 
 # phenophase; fo_s = status of open flowers phenophase)
 pstatus <- df %>%
-  select(-c(phenophase_id, midpoint, n_obs)) %>%
+  select(-midpoint) %>%
   pivot_wider(names_from = phenophase_description,
               values_from = phenophase_status) %>%
   data.frame() %>%
@@ -275,27 +317,15 @@ pstatus <- df %>%
 # Convert intensity information into wide form (fl_i = number of flowers
 # midpoint; fo_i = proportion of flowers open midpoint)
 pint <- df %>%
-  select(-c(phenophase_id, phenophase_status, n_obs)) %>%
+  select(-phenophase_status) %>%
   pivot_wider(names_from = phenophase_description,
               values_from = midpoint) %>%
   data.frame() %>%
   rename(fl_i = Flowers.or.flower.buds,
          fo_i = Open.flowers)
 
-# Convert number of observers for each plant-phenophase-date into wide form 
-# (n_obs_fl = number of observers of flower phenophase; n_obs_fo = number of
-# observers of open flower phenophase)
-pobs <- df %>%
-  select(-c(phenophase_id, phenophase_status, midpoint)) %>%
-  pivot_wider(names_from = phenophase_description,
-              values_from = n_obs) %>%
-  data.frame() %>%
-  rename(n_obs_fl = Flowers.or.flower.buds,
-         n_obs_fo = Open.flowers)
-
 # Merge status, intensity, observer dataframes
-obs <- left_join(pstatus, pint) %>%
-  left_join(pobs)
+obs <- left_join(pstatus, pint)
 
 # Address inconsistencies -----------------------------------------------------#
 
@@ -320,6 +350,7 @@ obs <- obs %>%
 obs <- obs %>%
   filter(!(!is.na(fl_s) & !is.na(fo_s) & fl_s == 0 & fo_s == 1))
 
+count(obs, fl_s, fo_s, is.na(fl_i), is.na(fo_i))
 # Looks like no observations with fl_s = NA and fo_s = 0 have intensity values 
 # for open flowers, so we can leave as is.
 
