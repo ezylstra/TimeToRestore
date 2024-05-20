@@ -12,7 +12,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-16
+# 2024-05-20
 ################################################################################
 
 require(rnpn)
@@ -231,8 +231,25 @@ count(datep_high, partner_group, site_name)
   # Other groups/sites with many instances of multiple observations per day:
   # New York Botanical Garden Forest Phenology (group)
   # Mohonk Preserve (group)
-# Will get the information above to NPN, but for the moment, won't treat these
-# data any different than other observations
+# Conferred with Erin P on this. She suggested removing data from Oak Hill and 
+# UNCO BIO (which they've had other issues with). NY Botanical Garden and Mohonk 
+# Preserve are reliable groups so keep their data in.
+df <- df %>%
+  filter(!grepl("Oak Hill", site_name)) %>%
+  filter(!grepl("UNCO", partner_group))
+
+# Recreate summary dataframe and recaluate the extent to which we have multiple
+# observations of same plant on same date
+datep <- df %>%
+  group_by(individual_id, site_id, site_name, partner_group, 
+           observation_date, phenophase_id) %>%
+  summarize(n_obs = n(),
+            .groups = "keep") %>%
+  data.frame()
+datep$obsnum <- 1:nrow(datep)
+sum(datep$n_obs > 1) / nrow(datep) * 100
+# Now, 5.3% of plant-date-phenophase combinations are associated with observations 
+# from multiple people. 
 
 # Isolate plant-year combinations where one or more times, a phenophase was 
 # observed by multiple people on the same day.
@@ -271,7 +288,7 @@ df <- df %>%
 summary(df$observer_rank[df$n_obs > 1])
 summary(df$n_obs[is.na(df$observer_rank)])
 
-# Now we have a couple options:  ########## REVIEW THIS WITH NPN ###############
+# Now we have a couple options:
 # 1) retain one observation of a plant phenophase per day, preferentially
 #    selecting those by people who submitted consistent observations.
 # 2) retain all data, use status = 1 observations, and average over midpoints
