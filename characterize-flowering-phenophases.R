@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-20
+# 2024-05-21
 ################################################################################
 
 require(dplyr)
@@ -188,9 +188,9 @@ if (peak_def == "near max") {
     mutate(peak = ifelse(near_max67 == 1 | over_500 == 1, 1, 0))
 }
 # checks:
-head(filter(peak_df, near_max67 == 0 & over_500 == 1))
-head(filter(peak_df, near_max67 == 1 & over_500 == 0))
-head(filter(peak_df, near_max67 == 1 & over_500 == 1))
+# head(filter(peak_df, near_max67 == 0 & over_500 == 1))
+# head(filter(peak_df, near_max67 == 1 & over_500 == 0))
+# head(filter(peak_df, near_max67 == 1 & over_500 == 1))
   
 # Will create a new dataframe (peaks) with summaries of data for each plant &
 # year, including the number of daily observations and estimates of 
@@ -204,12 +204,45 @@ peaks <- peak_df %>%
   mutate(peak_duration = peak_end - peak_onset + 1) %>%
   data.frame()
 
-# Identify whether peak flowering phenophase was discontinuous or not
-# Note that if there was no estimated number of open flowers (num_open = NA)
-# between two observations that were considered part of the peak we will
-# consider the peak continuous (ie, need a non-NA value of num_open between peak
-# observations to consider the peak discontinuous). 
+# Identify whether peak flowering phenophase was discontinuous or not.
+# Note that we need a flower or open_flower status of 0, or an estimated number
+# of flowers < 500 and < threshold*max between observations classifed as peak 
+# to label the peak as discontinuous.
 peaks$peak_discontinuous <- NA
+for (i in 1:nrow(peaks)) {
+  indiv <- peaks$individual_id[i]
+  yr <- peaks$year[i]
+  onset <- peaks$peak_onset[i]
+  end <- peaks$peak_end[i]
+  peak_df_sub <- peak_df %>%
+    filter(individual_id == indiv & year == yr) %>%
+    filter(day_of_year > onset & day_of_year < end)
+  if (nrow(peak_df_sub) == 0) { 
+    peaks$peak_discontinuous[i] <- 0
+  } else {
+    if (any(peak_df_sub$fl_s == 0, na.rm = TRUE) | 
+        any(peak_df_sub$fo_s == 0, na.rm = TRUE) |
+        any(peak_df_sub$peak == 0, na.rm = TRUE)) {
+      peaks$peak_discontinuous[i] <- 1  
+    } else {
+      peaks$peak_discontinuous[i] <- 0
+    }
+  }
+}
+count(peaks, peak_discontinuous)
+  # About 12% of peaks discontinous (or 25% of peaks with duration > 1 day)
+count(peaks, peak_duration, peak_discontinuous)
+  # As durations increase, so does probability of discontinous peak
+
+
+# 122894, 2019 = 1 obs
+test1_ind <- which(peaks$individual_id == 122894 & peaks$year == 2019)
+i <- test1_ind
+# 13583, 2019 = mult obs
+test2_ind <- which(peaks$individual_id == 13583 & peaks$year == 2019)
+i <- test2_ind
+
+
 for (i in 1:nrow(peaks)) {
   indiv <- peaks$individual_id[i]
   yr <- peaks$year[i]
@@ -237,14 +270,18 @@ peaks <- peaks %>%
 # Could plot number of open flowers by day (using different symbols to identify
 # peak or not) for each plant, year. [Need to use peak_df for this]
 
-df %>% filter(common_name == "butterfly milkweed") %>% group_by(year) %>%
+peak_df %>% filter(common_name == "butterfly milkweed") %>% group_by(year) %>%
   summarize(n_plants = length(unique(individual_id)),
             n_obs = n(),
             mn_obs_per_yr = n_obs / n_plants)
-bumi_73461 <- peak_df %>%
-  filter(individual_id == 73461) %>%
-  filter(year == 2016) %>%
-  select(individual_id, state, observation_date, fl_s, fo_s, num_open, peak)
+peak_df %>% filter(common_name == "butterfly milkweed" & year == 2019) %>% 
+  group_by(individual_id) %>%
+  summarize(n_obs = n()) %>%
+  data.frame()
+peak_df %>% filter(individual_id == 13583 & year == 2019) %>% 
+  select(state, observation_date, fl_s, fo_s, num_open, peak)
+
+
 ggplot(data = bumi_73461) + 
   geom_point(aes(x = observation_date, y = num_open)) +
   geom_smooth(aes(x = observation_date, y = num_open))
