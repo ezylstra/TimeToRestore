@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-24
+# 2024-05-27
 ################################################################################
 
 require(dplyr)
@@ -23,11 +23,11 @@ df <- read.csv("data/flower-status-intensities-priorityspp.csv")
 samples <- df %>%
   group_by(common_name, individual_id, site_id, state, year) %>%
   summarize(n_obs = n(),                      # No. of daily observations
-            n_fls = sum(!is.na(status_fl)),   # No. of flower status obs
-            n_fos = sum(!is.na(status_fo)),   # No. of open flower status obs
-            n_fli = sum(!is.na(midpoint_fl)), # No. of flower intensity values
-            n_foi = sum(!is.na(midpoint_fo)), # No. of open flower intensity values
-            n_ests_open = sum(!is.na(num_open)), # No. of observations with
+            n_status_fl = sum(!is.na(status_fl)),  # No. of flower status obs
+            n_status_fo = sum(!is.na(status_fo)),  # No. of open flower status obs
+            n_value_fl = sum(!is.na(midpoint_fl)), # No. of flower intensity values
+            n_value_fo = sum(!is.na(midpoint_fo)), # No. of open flower intensity values
+            n_ests_open = sum(!is.na(num_open)),   # No. of observations with
                                                       # an estimated number of 
                                                       # open flowers
             .groups = "keep") %>%
@@ -81,7 +81,7 @@ count(filter(samples, n_ests_open > 1 & state %in% states4),
 # NM: two spp with >10 plant-years (rabbitbrush [21], horsetail milkweed [19])
 # TX: two spp with >10 plant-years (sunflower [13], trumpet honeysuckle [12])
 
-# Characterize "peak" flowering -----------------------------------------------#
+# Identify when plants in "peak" flowering ------------------------------------#
 # Based on estimated number of open flowers
 
 # Remove plant-year combinations where we have no estimates of the number of 
@@ -157,6 +157,7 @@ peak_df <- peak_df %>%
 # 1) estimated number of open flowers within x% of the maximum value for that
 #    plant and year,
 # 2) criteria above OR estimated number of open flowers > 500.
+
 # peak_def <- "near max"
 peak_def <- "near max or over 500"
 
@@ -182,171 +183,294 @@ count(peak_df, near_max50, near_max67, near_max75)
 # Will use 67% threshold for now.
 if (peak_def == "near max") {
   peak_df <- peak_df %>%
-    mutate(peak = ifelse(near_max67 == 1, 1, 0))
+    mutate(peak = ifelse(near_max67 == 1, 1, 0)) %>%
+    select(-starts_with("near_")) %>%
+    select(-over_500)
 } else {
   peak_df <- peak_df %>%
-    mutate(peak = ifelse(near_max67 == 1 | over_500 == 1, 1, 0))
+    mutate(peak = ifelse(near_max67 == 1 | over_500 == 1, 1, 0)) %>%
+    select(-starts_with("near_")) %>%
+    select(-over_500)
 }
-# checks:
-# head(filter(peak_df, near_max67 == 0 & over_500 == 1))
-# head(filter(peak_df, near_max67 == 1 & over_500 == 0))
-# head(filter(peak_df, near_max67 == 1 & over_500 == 1))
-  
-# Will create a new dataframe (peaks) with summaries of data for each plant &
-# year, including the number of daily observations and estimates of 
-# peak onset/end/duration for each plant, year
-peaks <- peak_df %>%
-  filter(peak == 1) %>%
+
+# Change estimated number of open flowers (num_open) and peak values to 0 when 
+# status for flowers or open flowers is "no"/0
+peak_df <- peak_df %>%
+  mutate(num_open = case_when(
+    !is.na(status_fl) & status_fl == 0 ~ 0,
+    !is.na(status_fo) & status_fo == 0 ~ 0,
+    .default = num_open)) %>%
+  mutate(peak = case_when(
+    !is.na(status_fl) & status_fl == 0 ~ 0,
+    !is.na(status_fo) & status_fo == 0 ~ 0,
+    .default = peak))
+# check:
+count(peak_df, status_fl, status_fo, num_open)
+
+# Summarize data for each plant-year ------------------------------------------#
+
+# Create a new dataframe with summaries of data related to peak flowering
+# for each plant & year
+plantyr <- peak_df %>%
   group_by(site_id, common_name, individual_id, year) %>%
-  summarize(peak_onset = min(day_of_year, na.rm = TRUE),
-            peak_end = max(day_of_year, na.rm = TRUE),
+  summarize(n_obs = n(),
+            n_status_fl = sum(!is.na(status_fl)),
+            n_status_fo = sum(!is.na(status_fo)),
+            n_ests_open = sum(!is.na(num_open)),
+            first_obs = min(day_of_year),
+            last_obs = max(day_of_year),
             .groups = "keep") %>%
-  mutate(peak_duration = peak_end - peak_onset + 1) %>%
   data.frame()
 
-# Identify whether peak flowering phenophase was discontinuous or not.
-# Note that we need a flower or open_flower status of 0, or an estimated number
-# of flowers < 500 and < threshold*max between observations classifed as peak 
-# to label the peak as discontinuous.
-peaks$peak_discontinuous <- NA
-for (i in 1:nrow(peaks)) {
-  indiv <- peaks$individual_id[i]
-  yr <- peaks$year[i]
-  onset <- peaks$peak_onset[i]
-  end <- peaks$peak_end[i]
-  peak_df_sub <- peak_df %>%
-    filter(individual_id == indiv & year == yr) %>%
-    filter(day_of_year > onset & day_of_year < end)
-  if (nrow(peak_df_sub) == 0) { 
-    peaks$peak_discontinuous[i] <- 0
-  } else {
-    if (any(peak_df_sub$status_fl == 0, na.rm = TRUE) | 
-        any(peak_df_sub$status_fo == 0, na.rm = TRUE) |
-        any(peak_df_sub$peak == 0, na.rm = TRUE)) {
-      peaks$peak_discontinuous[i] <- 1  
-    } else {
-      peaks$peak_discontinuous[i] <- 0
-    }
+plantyr$open_status_interval_mn <- NA
+plantyr$open_status_interval_max <- NA
+plantyr$open_est_interval_mn <- NA
+plantyr$open_est_interval_max <- NA
+plantyr$first_open <- NA
+plantyr$numdays_since_closed <- NA
+plantyr$last_open <- NA
+plantyr$numdays_until_next_close <- NA
+plantyr$duration_open <- NA
+plantyr$discontinuous_open <- NA
+plantyr$num_obs_open_period <- NA
+plantyr$num_ests_open_period <- NA
+plantyr$first_peak <- NA
+plantyr$last_peak <- NA
+plantyr$duration_peak <- NA
+plantyr$discontinuous_peak <- NA
+
+for (i in 1:nrow(plantyr)) {
+  
+  # Subset of peak_df where flowers open status is known (ie, not NA)
+  open_df <- peak_df %>%
+    filter(individual_id == plantyr$individual_id[i],
+           year == plantyr$year[i],
+           !is.na(status_fo))
+  open_est_df <- open_df %>% filter(!is.na(num_open))
+  
+  # Number of days between observations where open flower status was recorded?
+  if (nrow(open_df) > 1) {
+    plantyr$open_status_interval_mn[i] <- round(mean(diff(open_df$day_of_year)), 1)
+    plantyr$open_status_interval_max[i] <- round(max(diff(open_df$day_of_year)), 1)
   }
+  # Number of days between estimates of the number of open flowers?
+  if (nrow(open_est_df) > 1) {
+    plantyr$open_est_interval_mn[i] <- round(mean(diff(open_est_df$day_of_year)), 1)
+    plantyr$open_est_interval_max[i] <- round(max(diff(open_est_df$day_of_year)), 1)
+  }
+  
+  first_open_ind <- first(which(open_df$status_fo == 1))
+  first_closed_ind <- first(which(open_df$status_fo == 0))
+  # First day of year with open flowers
+  plantyr$first_open[i] <- open_df$day_of_year[first_open_ind]
+  # Number of days since previous observation without open flowers
+  if (first_open_ind > first_closed_ind & !is.na(first_closed_ind)) {
+    plantyr$numdays_since_closed[i] <- 
+      plantyr$first_open[i] - open_df$day_of_year[first_open_ind - 1]
+  } else {
+    plantyr$numdays_since_closed[i] <- NA
+  }
+  
+  last_open_ind <- last(which(open_df$status_fo == 1))
+  last_closed_ind <- last(which(open_df$status_fo == 0))
+  # Last day of year with open flowers 
+  plantyr$last_open[i] <- open_df$day_of_year[last_open_ind]
+  # Number of days until next observation without open flowers
+  if (last_open_ind < last_closed_ind & !is.na(last_closed_ind)) {
+    plantyr$numdays_until_next_close[i] <- 
+      open_df$day_of_year[last_open_ind + 1] - plantyr$last_open[i]
+  } else {
+    plantyr$numdays_until_next_close[i] <- NA
+  }
+  # Number of days between first and last open flower observation
+  plantyr$duration_open[i] <- plantyr$last_open[i] - plantyr$first_open[i] + 1
+  open_period <- open_df[first_open_ind:last_open_ind,]
+  
+  # Were there observations without open flowers between first/last date?
+  plantyr$discontinuous_open[i] <- ifelse(any(open_period$status_fo == 0), 1, 0)
+  
+  # Number of observations between first/last date with open flowers (inclusive)
+  plantyr$num_obs_open_period[i] <- nrow(open_period)
+  # Number of open flower estimates bewteen first/last date with open flowers
+  plantyr$num_ests_open_period[i] <- sum(open_period$status_fo == 1)
+  
+  # Same stats, but for peak
+  first_peak_ind <- first(which(open_est_df$peak == 1))
+  last_peak_ind <- last(which(open_est_df$peak == 1))
+  plantyr$first_peak[i] <- open_est_df$day_of_year[first_peak_ind]
+  plantyr$last_peak[i] <- open_est_df$day_of_year[last_peak_ind]
+  plantyr$duration_peak[i] <- plantyr$last_peak[i] - plantyr$first_peak[i] + 1
+  plantyr$discontinuous_peak[i] <- 
+    ifelse(any(open_est_df$peak[first_peak_ind:last_peak_ind] == 0), 1, 0)
+
 }
 
-# Summaries of estimated peak duration/continuity:
-sum(peaks$peak_duration == 1) / nrow(peaks) 
+# Summaries of estimated PEAK duration/continuity:
+sum(plantyr$duration_peak == 1) / nrow(plantyr) 
   # 51% of "peaks" have duration == 1
-tail(sort(unique(peaks$peak_duration)), 30) 
+tail(sort(unique(plantyr$duration_peak)), 30) 
   # 7 plant-years with duration > 200
-sum(peaks$peak_discontinuous == 1) / nrow(peaks)
-sum(peaks$peak_discontinuous[peaks$peak_duration > 1] == 1) / sum(peaks$peak_duration > 1)
+sum(plantyr$discontinuous_peak == 1) / nrow(plantyr)
+sum(plantyr$discontinuous_peak[plantyr$duration_peak > 1] == 1) / sum(plantyr$duration_peak > 1)
   # About 12% of peaks discontinous (or 25% of peaks with duration > 1 day)
-count(peaks, peak_duration, peak_discontinuous)
-summary(glm(peak_discontinuous ~ peak_duration, 
-            data = peaks, family = "binomial"))
+count(plantyr, duration_peak, discontinuous_peak)
+summary(glm(discontinuous_peak ~ duration_peak, 
+            data = plantyr, family = "binomial"))
   # As durations increase, so does probability of discontinous peak
 
-# Attach relevant sample sizes
-peaks <- peaks %>%
-  left_join(select(samples, -c(common_name, site_id)), 
-            by = c("individual_id", "year")) %>%
-  relocate(starts_with("peak_"), .after = "TX")
+# Summaries of estimated OPEN FLOWER duration/continuity:
+sum(plantyr$duration_open == 1) / nrow(plantyr) 
+  # 22% of open flower phases have duration == 1
+tail(sort(unique(plantyr$duration_open)), 30) 
+  # 33 plant-years with duration > 200
+sum(plantyr$discontinuous_open == 1) / nrow(plantyr)
+sum(plantyr$discontinuous_open[plantyr$duration_open > 1] == 1) / sum(plantyr$duration_open > 1)
+# About 19% of open flower periods discontinous (or 25% of peaks with duration > 1 day)
+count(plantyr, duration_open, discontinuous_open)
+summary(glm(discontinuous_open ~ duration_open, 
+            data = plantyr, family = "binomial"))
+# As durations increase, so does probability of discontinous open flower period
 
-# Visualize "peak" flowering --------------------------------------------------#
-# Need to figure out how we're summarizing over years, individuals/locations
+# Narrow plant-years based on amount of data availabile to characterize -------#
+# peak flowering --------------------------------------------------------------#
 
-# Could plot number of open flowers by day (using different symbols to identify
-# peak or not) for each plant, year. [Need to use peak_df for this]
+# Use criteria to identify plants where it would be reasonable (or not) to 
+# characterize "peak" flowering based on the estimated number of open flowers
 
-peak_df %>% filter(common_name == "butterfly milkweed") %>% group_by(year) %>%
-  summarize(n_plants = length(unique(individual_id)),
-            n_obs = n(),
-            mn_obs_per_yr = n_obs / n_plants)
-peak_df %>% filter(common_name == "butterfly milkweed" & year == 2019) %>% 
-  group_by(individual_id) %>%
-  summarize(n_obs = n()) %>%
-  data.frame()
+# Would like to see one or more observations with no open flowers prior to open 
+# flower period (note: if numdays_since_closed = NA, then no prior observations)
+hist(plantyr$numdays_since_closed, breaks = 50)
+sum(plantyr$numdays_since_closed <= 14, na.rm = TRUE) / nrow(plantyr)
+  # 62% of plant-years have a "no" within 2 weeks of first yes to open
+# Similarly for observations after the open flower period
+hist(plantyr$numdays_until_next_close, breaks = 50)
+sum(plantyr$numdays_until_next_close <= 14, na.rm = TRUE) / nrow(plantyr)
+  # 60% of plant years have a "no" within 2 weeks of last yes to open
 
-# Here's an example of a plant that was observed 20 times in 2019 by the same
-# person, consistently Jan-Apr and Sep-Dec. Lots of observations without 
-# intensity values, which makes things difficult....
-  bumi_14303_2019 <- peak_df %>% 
-    filter(individual_id == 14303 & year == 2019) %>% 
-    select(state, observation_date, day_of_year, status_fl, status_fo, 
-           midpoint_fl, midpoint_fo, num_open, peak, person_id)
-  # For visualizing, if status_fo == 0, then need num_open == 0
-  bumi_14303_2019 <- bumi_14303_2019 %>%
-    filter(!is.na(status_fl) & !is.na(status_fo)) %>%
-    mutate(num_open = ifelse(is.na(num_open) & (status_fl == 0 | status_fo == 0), 
-                             0, num_open)) %>%
-    mutate(peak = ifelse(num_open == 0, 0, peak))
-  bumi_14303_2019
+plantyr2 <- plantyr %>% 
+  filter(numdays_since_closed <= 14) %>%
+  filter(numdays_until_next_close <= 14)
 
-# How should we accurately convey this information?
-  # Is it fair to connect estimates of open flowers with a line if there's a lot
-    # of time between estimates of observations?
-  # Especially when there are observations without estimates of open flowers, 
-    # it would like to also plot status information, but using solid "blocks" of 
-    # flower/open flower time assuming that observations were often enough 
-    # that we didn't miss status changes.
+# Filter by a minimum number of observations 
+hist(plantyr2$n_status_fo, breaks = 50)
+hist(plantyr2$n_ests_open, breaks = 50)
+  # Minimum of 5 observations with estimated number of flowers (can include 0)
+
+plantyr2 <- plantyr2 %>% filter(n_ests_open >=5)
+
+# Want plants that were observed regularly 
+hist(plantyr2$open_est_interval_mn, breaks = 50)
+hist(plantyr2$open_est_interval_max, breaks = 50)
+  # Maximum of 2 weeks between consecutive estimates of open flowers
+
+plantyr2 <- plantyr2 %>% filter(open_est_interval_mn <= 14)
+
+# Probably not reasonable for plants to have just one day any open flowers (at
+# least for most species)
+plantyr2 <- plantyr2 %>% filter(duration_open > 1)
+
+# What are we left with?
+count(plantyr2, common_name) %>%
+  left_join(spp, by = "common_name") %>%
+  arrange(priority, desc(n))
+# Priority 1 species with >= 30 plant-years:
+  # Wild bergamot (39; LA, NM, OK)
+  # Eastern purple coneflower (31; LA, NM, OK)
+  # Common buttonbush (30, LA, OK)
+# Priority 2 species with >= 30 plant-years:
+  # Red maple (758; LA)
+  # Black elderberry (202; LA)
+  # Butterfly milkweed (62; LA, NM, OK, TX)
+# No Priority 3 species with >= 30 plant-years
+# Priority 4 species with >= 30 plant-years:
+  # Common milkweed (176; OK)
+  # Rubber rabbitbrush (40; NM)
+
+# Attach an indicator to peak_df, identifying plant years with sufficient data
+plantyr2$peak_sufficient <- 1
+peak_df <- peak_df %>%
+  left_join(select(plantyr2, individual_id, year, peak_sufficient), 
+            by = c("individual_id", "year"))
+
+# Visualize estimates for wild bergamot ---------------------------------------#
+
+wb <- peak_df %>%
+  filter(common_name == "wild bergamot" & peak_sufficient == 1) %>%
+  select(-c(latitude, longitude, species_id, genus, species,
+            n_observations, max_open, peak_sufficient)) %>%
+  arrange(individual_id, year)
+count(wb, site_id, individual_id, state) 
+count(wb, individual_id, year)
+  # 19 individual plants, none of which are in target states.
+  # 15-79 observations of a plant in a year
+
+wb_summary <- plantyr2 %>%
+  filter(common_name == "wild bergamot")
+
+for (i in 1:nrow(wb_summary)) {
+  plot_data <- wb %>% 
+    filter(individual_id == wb_summary$individual_id[i], 
+           year == wb_summary$year[i])
   
-  # Could use stuff like this to create "flower" or "open flower" periods
-  data.frame(unclass(rle(bumi_14303_2019$status_fl)))
-  geom_rect(aes(xmin = 32, xmax = 263, ymin = 0, ymax = 50), 
-            fill = "orange", alpha = 0.2, col = NA)
-  
-  ggplot() + 
-    geom_line(data = bumi_14303_2019, aes(x = day_of_year, y = num_open)) +
-    geom_point(data = filter(bumi_14303_2019, peak == 1),
+  g <- ggplot() + 
+    geom_line(data = plot_data, aes(x = day_of_year, y = num_open)) +
+    geom_point(data = filter(plot_data, peak == 1),
                aes(x = day_of_year, y = num_open), 
                shape = 21, fill = "black", size = 2) +
-    geom_point(data = filter(bumi_14303_2019, peak == 0),
+    geom_point(data = filter(plot_data, peak == 0),
                aes(x = day_of_year, y = num_open), 
                shape = 21, fill = "white", size = 2) +
-    geom_hline(yintercept = 0.67 * max(bumi_14303_2019$num_open, na.rm = TRUE),
+    geom_hline(yintercept = 0.67 * max(plot_data$num_open, na.rm = TRUE),
                linetype = 2) +
+    xlim(1, 365) +
     labs(x = "Day of the year", y = "Estimated number of open flowers", 
-         title = "Butterfly milkweed individual 14303, 2019") +
+         title = paste0("Wild bergamot individual ", 
+                        plot_data$individual_id[1], " (", 
+                        plot_data$state[1], "), ",
+                        plot_data$year[1], " [i = ", i, "]")) +
     theme_classic()
-  
+  print(g)
+}
+# Quality of data varies a LOT
 
-# Plant observed 46 times in 2019, all by the same observer
-  test_peak <- peak_df %>% 
-    filter(individual_id == 141477 & year == 2019) %>% 
-    select(state, day_of_year, status_fl, status_fo, midpoint_fl, midpoint_fo, 
-           num_open, peak, person_id)
-  test_peak
-  # For visualizing, if status_fo == 0, then need num_open == 0
-  test_peak <- test_peak %>%
-    filter(!is.na(status_fl) & !is.na(status_fo)) %>%
-    mutate(num_open = ifelse(is.na(num_open) & (status_fl == 0 | status_fo == 0), 
-                             0, num_open)) %>%
-    filter(!is.na(num_open)) %>%
-    mutate(peak = replace_na(peak, 0))
-  test_peak
-  ggplot() + 
-    geom_line(data = test_peak, aes(x = day_of_year, y = num_open)) +
-    geom_point(data = filter(test_peak, peak == 1),
+# Visualize estimates for purple coneflower -----------------------------------#
+
+epc <- peak_df %>%
+  filter(common_name == "eastern purple coneflower" & peak_sufficient == 1) %>%
+  select(-c(latitude, longitude, species_id, genus, species,
+            n_observations, max_open, peak_sufficient)) %>%
+  arrange(individual_id, year)
+count(epc, site_id, individual_id, state) 
+count(epc, individual_id, year)
+# 18 individual plants, none of which are in target states.
+# 16-259 observations of a plant in a year
+
+epc_summary <- plantyr2 %>%
+  filter(common_name == "eastern purple coneflower")
+
+for (i in 1:nrow(epc_summary)) {
+  plot_data <- epc %>% 
+    filter(individual_id == epc_summary$individual_id[i], 
+           year == epc_summary$year[i])
+  
+  g <- ggplot() + 
+    geom_line(data = plot_data, aes(x = day_of_year, y = num_open)) +
+    geom_point(data = filter(plot_data, peak == 1),
                aes(x = day_of_year, y = num_open), 
                shape = 21, fill = "black", size = 2) +
-    geom_point(data = filter(test_peak, peak == 0),
+    geom_point(data = filter(plot_data, peak == 0),
                aes(x = day_of_year, y = num_open), 
                shape = 21, fill = "white", size = 2) +
+    geom_hline(yintercept = 0.67 * max(plot_data$num_open, na.rm = TRUE),
+               linetype = 2) +
+    xlim(1, 365) +
     labs(x = "Day of the year", y = "Estimated number of open flowers", 
-         title = "Butterfly milkweed individual 141477, 2019")
+         title = paste0("Eastern purple coneflower individual ", 
+                        plot_data$individual_id[1], " (", 
+                        plot_data$state[1], "), ",
+                        plot_data$year[1], " [i = ", i, "]")) +
+    theme_classic()
+  print(g)
+}
 
-
-
-
-# Could create a 7-day heatmap or "activity curve" with the proportion of
-# individuals (over some area and years) that are in peak flowering [Need to
-# use peak_df for that]
-
-# Onset/end/duration good for linear models, where we can use the response for
-# an individual and year and include explanatory variables like climate, year,
-# and/or latitude
-
-
-
-# Characterize flower phenophase ----------------------------------------------#
-# Similar to peak, want to get an onset, duration, end, discontinuous flag for
-# each plant/year. Unlike peak, this is likely easier done with the individual
-# phenometrics dataset
 
