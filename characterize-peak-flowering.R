@@ -1,5 +1,5 @@
 ################################################################################
-# Characterize flowering phenophases (onset, duration, end)
+# Explore what's possible with number of open flower estimates
 
 # Much of code is derived from that originally developed by Alyssa Rosemartin, 
 # Hayley Limes, and Jeff Oliver. 
