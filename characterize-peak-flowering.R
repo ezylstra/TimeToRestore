@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-27
+# 2024-05-30
 ################################################################################
 
 require(dplyr)
@@ -158,8 +158,8 @@ peak_df <- peak_df %>%
 #    plant and year,
 # 2) criteria above OR estimated number of open flowers > 500.
 
-# peak_def <- "near max"
-peak_def <- "near max or over 500"
+peak_def <- "near max"
+# peak_def <- "near max or over 500"
 
 # Explore "threshold" amount of open flowers (%, relative to the max), 
 # above which, will be considered peak flowering.
@@ -204,8 +204,9 @@ peak_df <- peak_df %>%
     !is.na(status_fl) & status_fl == 0 ~ 0,
     !is.na(status_fo) & status_fo == 0 ~ 0,
     .default = peak))
-# check:
+# checks:
 count(peak_df, status_fl, status_fo, num_open)
+count(peak_df, status_fl, status_fo, peak)
 
 # Summarize data for each plant-year ------------------------------------------#
 
@@ -329,7 +330,7 @@ sum(plantyr$discontinuous_open[plantyr$duration_open > 1] == 1) / sum(plantyr$du
 count(plantyr, duration_open, discontinuous_open)
 summary(glm(discontinuous_open ~ duration_open, 
             data = plantyr, family = "binomial"))
-# As durations increase, so does probability of discontinous open flower period
+  # As durations increase, so does probability of discontinous open flower period
 
 # Narrow plant-years based on amount of data availabile to characterize -------#
 # peak flowering --------------------------------------------------------------#
