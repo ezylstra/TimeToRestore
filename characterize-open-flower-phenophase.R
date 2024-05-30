@@ -17,6 +17,7 @@ require(ggplot2)
 library(terra)
 library(tidyterra)
 library(mgcv)
+library(gridExtra)
 
 rm(list = ls())
 
@@ -159,11 +160,17 @@ df <- df %>%
   mutate(zone = str_pad(zone, width = 3, side = "left", pad = 0))
 
 # Add week to data, so we can calculate weekly proportions --------------------#
-# (note: probably want to figure out whether week/isoweek is better)
+
+# We'll be creating doy column to assign each week with a day of the year.
+day_of_week <- 1
+# Note: if we want the generic date and DOY to be the start of each week (eg,
+# date for week 1 would be Jan 1), then set day_of_week = 1. If we want the
+# generic date and DOY to be mid week (Thursday) then set day_of_week = 4. 
 
 df <- df %>%
-  mutate(wk = isoweek(observation_date),
-         date_generic = parse_date_time(paste(2024, wk, 1, sep = "/"), "Y/W/w"),
+  mutate(wk = week(observation_date),
+         date_generic = parse_date_time(paste(2024, wk, day_of_week, sep = "/"), 
+                                        "Y/W/w"),
          date_generic = as.Date(date_generic),
          doy = yday(date_generic),
          fyear = factor(year, levels = as.character(2013:2023)))
@@ -199,7 +206,7 @@ wb <- df %>%
     # between weeks 20 and 40 is >= 10
 wb_nobs <- wb %>%
   group_by(year) %>%
-  summarize(nobs = length(unique(individual_id))) %>%
+  summarize(nplants = length(unique(individual_id))) %>%
   data.frame()
 wb_nobsperwk <- wb %>%
   filter(wk %in% 20:40) %>%
@@ -272,6 +279,8 @@ wb_fo1 <- gam(prop_open ~ s(doy, bs = "cc", k = 20), weights = nobs_open,
 wb_foy <- gam(prop_open ~ fyear + s(doy, by = fyear, bs = "cc", k = 20), 
               weights = nobs_open, data = wb_all_yrprop, method = "REML", 
               family = "binomial")
+# Compare the two models with AIC
+AIC(wb_fo1, wb_foy)
 
   # Make predictions
   wb_yrpreds <- data.frame(fyear = NA)
@@ -380,4 +389,73 @@ wb_foy <- gam(prop_open ~ fyear + s(doy, by = fyear, bs = "cc", k = 20),
                  family = "binomial")
   AIC(wb_foz, wb_foz1)
 
+# Create "heatmaps" for proportion of plants with open flowers ----------------#
+# Continue to use wild bergamot for an example. Using the dataset create above
+# that contains just one observation of a plant per week
+  
+# Need to decide how we calculate these proportions....
+  # All plants or just those within some region that includes 4 target states?
+  # All years combined, a subset of years combined, or individually by year?
+  
+  # Look at data available by year for wild bergamot:
+  wb_nobs
+    # Won't use data from 2013-2015, when only 1-2 plants were observed.
+  wb <- filter(wb, year %in% 2016:2023)  
+  
+  # Look where plants are located
+  wb_plants <- wb %>%
+    select(individual_id, state, site_id, lat, lon, zone) %>%
+    distinct() 
+  count(wb_plants, grepl("7|8|9", zone))
+  count(wb, grepl("7|8|9", zone))
+    # Only 23 of 104 plants (22%) and 11% of observations in zones 7-9, 
+    # so might be difficult to split things out by region (and the small sample
+    # sizes in zone 7-9 would be apparent in a heat map)
+  
+  # Calculating proportions across all plants, across years (2016-2023)
+  wbprop <- wb %>%
+    filter(!is.na(status_fo)) %>%
+    group_by(wk, doy, date_generic) %>%
+    summarize(n_obs = n(),
+              sum_open = sum(status_fo),
+              prop_open = sum_open / n_obs,
+              .groups = "keep") %>%
+    mutate(y = 1) %>%
+    data.frame()
+  wbprop
+    # Weekly sample sizes range from 5-83
+  
+  # Quick look (using geom_tile code from original repo, but will need to spend
+  # more time looking into how the call works. Not sure that the limits, labels
+  # are all correct. Before I expanded the limits a little I was getting a 
+  # warning that some rows were removed)
+  g1 <- ggplot(wbprop) +
+    geom_line(aes(x = wk, y = prop_open))
+  g2 <- ggplot(wbprop) +
+    geom_tile(aes(x = wk, y = y, fill = prop_open)) +
+    scale_fill_gradient(low = "gray90", high = "blue", (name = "Proportion")) +
+    scale_x_continuous(breaks = seq(1, 52, by = 4.25), limits=c(0.5, 52.5),
+                       labels = c("Jan", "Feb", "Mar", "Apr", "May", "June",
+                                "July", "Aug", "Sep", "Oct", "Nov", "Dec", "")) +
+    theme(legend.position = "none")
+  grid.arrange(g1, g2, ncol = 1)
+
+  # Calculating proportions across all plants, each year (2016-2023)
+  wbprop_yr <- wb %>%
+    filter(!is.na(status_fo)) %>%
+    group_by(year, wk, doy, date_generic) %>%
+    summarize(n_obs = n(),
+              sum_open = sum(status_fo),
+              prop_open = sum_open / n_obs,
+              .groups = "keep") %>%
+    mutate(y = 1) %>%
+    data.frame()
+  head(wbprop_yr, 20)
+  count(wbprop_yr, n_obs)
+  # Weekly sample sizes range from 1-21 (median = 6)
+  # Can't really do a lot with that....
+  summary(filter(wbprop_yr, wk %in% 20:40))
+  count(filter(wbprop_yr, wk %in% 20:40), n_obs)
+  # For weeks 20-40, sample sizes range from 1-19 (median = 9)
+  
   
