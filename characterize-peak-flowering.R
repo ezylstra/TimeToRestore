@@ -56,7 +56,7 @@ spp_ss <- count(filter(samples, n_ests_open > 1),
                 common_name, priority, LA, NM, OK, TX) %>%
   arrange(desc(n))
 spp_ss
-summary(spp_ss)
+sum(spp_ss$n)
   # Range = 2-1549 (2-295 if you exclude red maple); median = 20. 
   # 15 species that have >=30 plant-years with 2 or more estimates. But note
     # we haven't restricted things geographically.
@@ -84,11 +84,12 @@ count(filter(samples, n_ests_open > 1 & state %in% states4),
 # Identify when plants in "peak" flowering ------------------------------------#
 # Based on estimated number of open flowers
 
-# Remove plant-year combinations where we have no estimates of the number of 
-# open flowers
+# Remove plant-year combinations where we have <2 (non-zero) estimates of the 
+# number of open flowers
 peak_df <- df %>%  
   group_by(individual_id, year) %>%
-  filter(any(num_open != 0)) %>%
+  filter(sum(!is.na(num_open)) > 1) %>%
+  # filter(any(num_open != 0)) %>%  # Use this option if keeping plant-yrs with 1 estimate
   ungroup() %>%
   data.frame()
 
@@ -176,9 +177,9 @@ peak_df <- peak_df %>%
   data.frame()
 # Number of plant-years above three thresholds
 count(peak_df, near_max50, near_max67, near_max75)
-# 50%: 9326
-# 67%: 8039
-# 75%: 7551
+# 50%: 8159
+# 67%: 6872
+# 75%: 6384
 
 # Will use 67% threshold for now.
 if (peak_def == "near max") {
@@ -292,7 +293,7 @@ for (i in 1:nrow(plantyr)) {
   
   # Number of observations between first/last date with open flowers (inclusive)
   plantyr$num_obs_open_period[i] <- nrow(open_period)
-  # Number of open flower estimates bewteen first/last date with open flowers
+  # Number of open flower estimates between first/last date with open flowers
   plantyr$num_ests_open_period[i] <- sum(open_period$status_fo == 1)
   
   # Same stats, but for peak
@@ -308,25 +309,26 @@ for (i in 1:nrow(plantyr)) {
 
 # Summaries of estimated PEAK duration/continuity:
 sum(plantyr$duration_peak == 1) / nrow(plantyr) 
-  # 51% of "peaks" have duration == 1
-tail(sort(unique(plantyr$duration_peak)), 30) 
-  # 7 plant-years with duration > 200
+  # 44% of "peaks" have duration == 1
+count(filter(plantyr, duration_peak > 1), common_name)
+  # 861 (50%) of plant-years with duration > 1 are red maple
+sum(plantyr$duration_peak > 200)
+  # 2 plant-years with duration > 200
 sum(plantyr$discontinuous_peak == 1) / nrow(plantyr)
 sum(plantyr$discontinuous_peak[plantyr$duration_peak > 1] == 1) / sum(plantyr$duration_peak > 1)
-  # About 12% of peaks discontinous (or 25% of peaks with duration > 1 day)
+  # About 13% of peaks discontinous (or 23% of peaks with duration > 1 day)
 count(plantyr, duration_peak, discontinuous_peak)
 summary(glm(discontinuous_peak ~ duration_peak, 
             data = plantyr, family = "binomial"))
   # As durations increase, so does probability of discontinous peak
 
 # Summaries of estimated OPEN FLOWER duration/continuity:
-sum(plantyr$duration_open == 1) / nrow(plantyr) 
-  # 22% of open flower phases have duration == 1
-tail(sort(unique(plantyr$duration_open)), 30) 
-  # 33 plant-years with duration > 200
+  # Note that the duration of the open flower period HAS to be > 1 given that 
+  # we've only include plant-years with >1 estimate of the number of open flowers
+sum(plantyr$duration_open > 200)
+  # 41 plant-years with duration > 200
 sum(plantyr$discontinuous_open == 1) / nrow(plantyr)
-sum(plantyr$discontinuous_open[plantyr$duration_open > 1] == 1) / sum(plantyr$duration_open > 1)
-# About 19% of open flower periods discontinous (or 25% of peaks with duration > 1 day)
+  # About 25% of open flower periods discontinous
 count(plantyr, duration_open, discontinuous_open)
 summary(glm(discontinuous_open ~ duration_open, 
             data = plantyr, family = "binomial"))
@@ -335,18 +337,18 @@ summary(glm(discontinuous_open ~ duration_open,
 # Narrow plant-years based on amount of data availabile to characterize -------#
 # peak flowering --------------------------------------------------------------#
 
-# Use criteria to identify plants where it would be reasonable (or not) to 
+# Use criteria to identify plant-yrs where it would be reasonable (or not) to 
 # characterize "peak" flowering based on the estimated number of open flowers
 
 # Would like to see one or more observations with no open flowers prior to open 
 # flower period (note: if numdays_since_closed = NA, then no prior observations)
 hist(plantyr$numdays_since_closed, breaks = 50)
 sum(plantyr$numdays_since_closed <= 14, na.rm = TRUE) / nrow(plantyr)
-  # 62% of plant-years have a "no" within 2 weeks of first yes to open
+  # 70% of plant-years have a "no" within 2 weeks of first yes to open
 # Similarly for observations after the open flower period
 hist(plantyr$numdays_until_next_close, breaks = 50)
 sum(plantyr$numdays_until_next_close <= 14, na.rm = TRUE) / nrow(plantyr)
-  # 60% of plant years have a "no" within 2 weeks of last yes to open
+  # 67% of plant years have a "no" within 2 weeks of last yes to open
 
 plantyr2 <- plantyr %>% 
   filter(numdays_since_closed <= 14) %>%
@@ -362,30 +364,28 @@ plantyr2 <- plantyr2 %>% filter(n_ests_open >=5)
 # Want plants that were observed regularly 
 hist(plantyr2$open_est_interval_mn, breaks = 50)
 hist(plantyr2$open_est_interval_max, breaks = 50)
-  # Maximum of 2 weeks between consecutive estimates of open flowers
+  # Average 2 weeks or less between consecutive estimates of open flowers
 
 plantyr2 <- plantyr2 %>% filter(open_est_interval_mn <= 14)
-
-# Probably not reasonable for plants to have just one day any open flowers (at
-# least for most species)
-plantyr2 <- plantyr2 %>% filter(duration_open > 1)
 
 # What are we left with?
 count(plantyr2, common_name) %>%
   left_join(spp, by = "common_name") %>%
   arrange(priority, desc(n))
-# Priority 1 species with >= 30 plant-years:
-  # Wild bergamot (39; LA, NM, OK)
+# Priority 1 species with >= 25 plant-years:
+  # Wild bergamot (38; LA, NM, OK)
   # Eastern purple coneflower (31; LA, NM, OK)
-  # Common buttonbush (30, LA, OK)
-# Priority 2 species with >= 30 plant-years:
-  # Red maple (758; LA)
-  # Black elderberry (202; LA)
+  # Common buttonbush (27, LA, OK)
+# Priority 2 species with >= 25 plant-years:
+  # Red maple (714; LA)
+  # Black elderberry (201; LA)
   # Butterfly milkweed (62; LA, NM, OK, TX)
-# No Priority 3 species with >= 30 plant-years
-# Priority 4 species with >= 30 plant-years:
-  # Common milkweed (176; OK)
+# Priority 3 species with >= 25 plant-years:
+  # Swamp milkweed (26; OK)
+# Priority 4 species with >= 25 plant-years:
+  # Common milkweed (158; OK)
   # Rubber rabbitbrush (40; NM)
+  # New England aster (26; LA, OK)
 
 # Attach an indicator to peak_df, identifying plant years with sufficient data
 plantyr2$peak_sufficient <- 1
@@ -402,7 +402,7 @@ wb <- peak_df %>%
   arrange(individual_id, year)
 count(wb, site_id, individual_id, state) 
 count(wb, individual_id, year)
-  # 19 individual plants, none of which are in target states.
+  # 18 individual plants, none of which are in target states.
   # 15-79 observations of a plant in a year
 
 wb_summary <- plantyr2 %>%
@@ -473,5 +473,3 @@ for (i in 1:nrow(epc_summary)) {
     theme_classic()
   print(g)
 }
-
-
