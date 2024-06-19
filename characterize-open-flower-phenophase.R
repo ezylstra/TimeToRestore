@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-05-30
+# 2024-06-18
 ################################################################################
 
 require(dplyr)
@@ -371,7 +371,7 @@ AIC(wb_fo1, wb_foy)
               alpha = alphaline) +
     scale_color_discrete(name = "Zone789") +    
     geom_line(data = wb_foz_preds, aes(x = doy, y = fit, group = zone789,
-                                       color = zone789)) +
+                                       color = zone789), linewidth = 1.5) +
     labs(y = paste0("Proportion of plants with open flowers"), 
          x = "Day of year") +
     annotate("text", x = 365, y = 0.98, label = "Wild bergamot",
@@ -383,12 +383,18 @@ AIC(wb_fo1, wb_foy)
   # Can't use AIC to compare models since the zone model is based on a different
   # dataset...
   # But, directly comparing models with regional curves and a single curve (both
-  # across years), suggests regional curves fit the data much better.  
+  # across years), suggests regional curves fit the data much better. However, 
+  # it does look like there's a bunch of noise in the zone 7-9 data, probably
+  # because sample sizes are small. 
   wb_foz1 <- gam(prop_open ~ s(doy, bs = "cc", k = 20), 
                  weights = nobs_open, data = wb_zone_prop, method = "REML", 
                  family = "binomial")
   AIC(wb_foz, wb_foz1)
 
+  wb_zone_prop %>% arrange(zone789, wk)
+  count(filter(wb_zone_prop, zone789 == 1), nobs)
+    # Most weeks (40/52) had 1-5 plant observations. The most obs in any week was 8
+  
 # Create "heatmaps" for proportion of plants with open flowers ----------------#
 # Continue to use wild bergamot for an example. Using the dataset create above
 # that contains just one observation of a plant per week
