@@ -175,6 +175,77 @@ df <- df %>%
          doy = yday(date_generic),
          fyear = factor(year, levels = as.character(2013:2023)))
 
+# Summarize weekly data available, by species ---------------------------------#
+
+# Just keep one observation of each individual, each week. Sort so the most
+# advanced phenophase gets kept (if more than one value in a week)
+df1 <- df %>%
+  arrange(common_name, individual_id, year, wk, 
+          desc(status_fl), desc(status_fo)) %>%
+  distinct(individual_id, year, wk, .keep_all = TRUE) %>%
+  # Remove week 53
+  filter(wk != 53) %>%
+  mutate(z789 = ifelse(lat <=38 & grepl("7|8|9", zone), 1, 0),
+         sc = 1 * state %in% c("LA", "NM", "OK", "TX"))
+
+# Summarize across all plants, years
+propdat_wk <- df1 %>%
+  group_by(common_name, wk) %>%
+  summarize(n_obs = n(), .groups = "keep") %>%
+  data.frame()
+  # Calculate mean no. observations used to calculate proportion open in weeks 
+  # 10-40 (~ March - September)
+propdat <- propdat_wk %>%
+  filter(wk %in% 10:40) %>%
+  group_by(common_name) %>%
+  summarize(mn_weeklyobs_1040 = round(mean(n_obs), 1)) %>%
+  data.frame()
+
+# Summarize across plants in 4 states, all years
+propdat_wk_sc <- df1 %>%
+  filter(sc == 1) %>%
+  group_by(common_name, wk) %>%
+  summarize(n_obs_sc = n(), .groups = "keep") %>%
+  data.frame()
+propdat_sc <- propdat_wk_sc %>%
+  filter(wk %in% 10:40) %>%
+  group_by(common_name) %>%
+  summarize(mn_weeklyobs_1040_sc = round(mean(n_obs_sc), 1)) %>%
+  data.frame()
+
+# Summarize across plants in zones 7-9 and below 38-deg lat, all years
+propdat_wk_z789 <- df1 %>%
+  filter(z789 == 1) %>%
+  group_by(common_name, wk) %>%
+  summarize(n_obs_z789 = n(), .groups = "keep") %>%
+  data.frame()
+propdat_z789 <- propdat_wk_z789 %>%
+  filter(wk %in% 10:40) %>%
+  group_by(common_name) %>%
+  summarize(mn_weeklyobs_1040_z789 = round(mean(n_obs_z789), 1)) %>%
+  data.frame()
+
+# Get number of plants, plant years
+nplants <- df1 %>%
+  group_by(common_name) %>%
+  summarize(n_plants = length(unique(individual_id)),
+            n_plants_sc = length(unique(individual_id[sc == 1])),
+            n_plants_z789 = length(unique(individual_id[z789 == 1])),
+            n_plantyrs = length(unique(ind_yr)),
+            n_plantyrs_sc = length(unique(ind_yr[sc == 1])),
+            n_plantyrs_z789 = length(unique(ind_yr[z789 == 1]))) %>%
+  data.frame()
+
+# Combine everything
+propdata <- nplants %>%
+  left_join(propdat, by = "common_name") %>%
+  left_join(propdat_sc, by = "common_name") %>%
+  left_join(propdat_z789, by = "common_name") %>%
+  arrange(desc(n_plantyrs_sc))
+
+# Look at data summaries for all plants, plants in 4 southcentral states
+propdata %>% select(!contains("z789"))
+
 # Explore wild bergamot data --------------------------------------------------#
 # Priority 1 species. 107 plants monitored, 207 plant-years.
 
