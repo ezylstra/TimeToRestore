@@ -255,9 +255,10 @@ propdata %>% select(!contains("z789"))
 # Explore wild bergamot data --------------------------------------------------#
 # Priority 1 species. 107 plants monitored, 207 plant-years.
 
+wb <- df1 %>% filter(common_name == "wild bergamot")
+
 # Where are the plants?
-wb_sites <- df %>%
-  filter(common_name == "wild bergamot") %>%
+wb_sites <- wb %>%
   select(site_id, lat, lon, state, zone) %>%
   distinct()
 wb_sitesv <- vect(wb_sites, geom = c("lon", "lat"), crs = "epsg:4269")
@@ -268,14 +269,6 @@ ggplot(subset(zones, zones$zone %in% c("7a", "7b", "8a", "8b", "9a", "9b"))) +
   scale_fill_whitebox_d(palette = "muted", name = "Zone") +
   geom_spatvector(data = states, aes(fill = NA)) +
   geom_spatvector(data = wb_sitesv, size = 0.5)
-
-# Just keep one observation of each individual, each week. Sort so the most
-# advanced phenophase gets kept (if more than one value in a week)
-wb <- df %>%
-  filter(common_name == "wild bergamot") %>%
-  arrange(common_name, individual_id, year, wk, 
-          desc(status_fl), desc(status_fo)) %>%
-  distinct(individual_id, year, wk, .keep_all = TRUE)
 
 # Limit which years are included by the number of individuals observed?
   # Just use years when 10 or more individuals were observed?
@@ -302,9 +295,32 @@ wb_all_yrprop <- wb %>%
   group_by(year, wk, doy, fyear) %>%
   summarize(nobs = n(),
             nobs_open = sum(!is.na(status_fo)),
-            prop_open = sum(status_fo, na.rm = TRUE) / nobs_open,
+            n_open = sum(status_fo, na.rm = TRUE),
             .groups = "keep") %>%
-  data.frame()
+  data.frame() %>%
+  mutate(prop_open = n_open / nobs_open)
+
+# Calculate proportion of flowers open each week, across years
+wb_all_prop <- wb_all_yrprop %>%
+  group_by(wk, doy) %>%
+  summarize(nobs_open = sum(nobs_open),
+            n_open = sum(n_open),
+            .groups = "keep") %>%
+  data.frame() %>%
+  mutate(prop_open = n_open / nobs_open)
+# ggplot object
+wb_raw_plot <- ggplot() + 
+  geom_point(data = wb_all_prop, aes(x = doy, y = prop_open, size = nobs_open),
+             alpha = alphaline) +
+  geom_line(data = wb_all_prop, aes(x = doy, y = prop_open), 
+            alpha = alphaline) +
+  labs(y = paste0("Proportion of plants with open flowers"), 
+       x = "Day of year") +
+  annotate("text", x = 365, y = 0.98, label = "Wild bergamot",
+           hjust = 1, vjust = 1, fontface = 2) +
+  theme(text = element_text(size = 10),
+        legend.text = element_text(size = 8))
+wb_raw_plot
 
 # We can use a GAM to model the proportion of plants with open flowers and
 # using (subjective) criteria, identify the start/end/duration of open flower 
