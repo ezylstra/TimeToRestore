@@ -392,9 +392,27 @@ hist(plantyr2$open_est_interval_max, breaks = 50)
 plantyr2 <- plantyr2 %>% filter(open_est_interval_mn <= 14)
 
 # What are we left with?
-count(plantyr2, common_name) %>%
-  left_join(spp, by = "common_name") %>%
-  arrange(priority, desc(n))
+plantyr2_spp <- plantyr2 %>%
+  group_by(common_name) %>%
+  summarize(n_plants = length(unique(individual_id)),
+            n_plants_sc = length(unique(individual_id[sc == 1])),
+            n_plantyrs = n(),
+            n_plantyrs_sc = length(individual_id[sc == 1]),
+            nobsperyr = round(mean(n_obs), 1),
+            nobsperyr_sc = round(mean(n_obs[sc == 1]), 1),
+            estinterval = round(mean(open_est_interval_mn), 1),
+            estinterval_sc = round(mean(open_est_interval_mn[sc == 1]), 1)) %>%
+  data.frame()
+
+openest2_spp <- spp %>%
+  right_join(plantyr2_spp, by = "common_name") %>%
+  arrange(priority, desc(n_plantyrs_sc))
+
+# Write to file
+# write.csv(openest2_spp,
+#           "data/estopenflower_restrictions_samplesizes.csv",
+#           row.names = FALSE)
+
 # Priority 1 species with >= 25 plant-years:
   # Wild bergamot (38; LA, NM, OK)
   # Eastern purple coneflower (31; LA, NM, OK)
