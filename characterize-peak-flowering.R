@@ -91,6 +91,7 @@ peak_df <- df %>%
   filter(sum(!is.na(num_open)) > 1) %>%
   # filter(any(num_open != 0)) %>%  # Use this option if keeping plant-yrs with 1 estimate
   ungroup() %>%
+  mutate(sc = ifelse(state %in% c("LA", "NM", "OK", "TX"), 1, 0)) %>%
   data.frame()
 
 # Extract the maximum number of open flowers estimated for each plant-year
@@ -214,7 +215,7 @@ count(peak_df, status_fl, status_fo, peak)
 # Create a new dataframe with summaries of data related to peak flowering
 # for each plant & year
 plantyr <- peak_df %>%
-  group_by(site_id, common_name, individual_id, year) %>%
+  group_by(site_id, common_name, individual_id, sc, year) %>%
   summarize(n_obs = n(),
             n_status_fl = sum(!is.na(status_fl)),
             n_status_fo = sum(!is.na(status_fo)),
@@ -321,6 +322,28 @@ count(plantyr, duration_peak, discontinuous_peak)
 summary(glm(discontinuous_peak ~ duration_peak, 
             data = plantyr, family = "binomial"))
   # As durations increase, so does probability of discontinous peak
+
+# Summaries, by species
+plantyr_spp <- plantyr %>%
+  group_by(common_name) %>%
+  summarize(n_plants = length(unique(individual_id)),
+            n_plants_sc = length(unique(individual_id[sc == 1])),
+            n_plantyrs = n(),
+            n_plantyrs_sc = length(individual_id[sc == 1]),
+            nobsperyr = round(mean(n_obs), 1),
+            nobsperyr_sc = round(mean(n_obs[sc == 1]), 1),
+            estinterval = round(mean(open_est_interval_mn), 1),
+            estinterval_sc = round(mean(open_est_interval_mn[sc == 1]), 1)) %>%
+  data.frame()
+
+openest_spp <- spp %>%
+  right_join(plantyr_spp, by = "common_name") %>%
+  arrange(priority, desc(n_plantyrs_sc))
+
+# Write to file
+# write.csv(openest_spp, 
+#           "data/estopenflower_samplesizes.csv",
+#           row.names = FALSE)
 
 # Summaries of estimated OPEN FLOWER duration/continuity:
   # Note that the duration of the open flower period HAS to be > 1 given that 

@@ -1,0 +1,34 @@
+"common_name","priority","LA","NM","OK","TX","n_plants","n_plants_sc","n_plantyrs","n_plantyrs_sc","nobsperyr","nobsperyr_sc","estinterval","estinterval_sc"
+"common buttonbush",1,1,0,1,0,29,13,52,22,28.9,16.1,12.3,17.2
+"common sunflower",1,0,1,1,0,33,10,39,14,22.4,34.1,4.8,6.2
+"eastern purple coneflower",1,1,1,1,0,60,4,106,4,26.9,8,10.7,8.2
+"showy milkweed",1,0,1,1,0,9,1,18,2,22.1,51,12,7.2
+"tall blazing star",1,1,1,1,1,9,0,11,0,18,NA,13.2,NA
+"cardinalflower",1,1,1,1,0,27,0,40,0,20.2,NA,11.1,NA
+"wild bergamot",1,1,1,1,0,34,0,66,0,30.3,NA,8.3,NA
+"red maple",2,1,0,0,0,717,31,1549,105,27.5,28.4,10.4,13.7
+"trumpet honeysuckle",2,1,0,0,0,17,9,34,15,25,34.5,11.6,7
+"eastern baccharis",2,1,0,0,0,11,5,16,8,25.6,30.5,9.7,11.6
+"butterfly milkweed",2,1,1,1,1,73,2,152,6,24.6,17.7,10.4,13.1
+"purple passionflower",2,1,0,0,0,8,2,11,4,17.9,17,10.7,12
+"button eryngo",2,1,0,1,0,5,3,6,3,13.7,14.3,11.4,10.3
+"aquatic milkweed",2,1,0,0,0,1,1,2,2,12.5,12.5,16.6,16.6
+"black elderberry",2,1,0,0,0,57,1,295,1,47.8,13,8.9,8.8
+"spider milkweed",2,0,1,1,1,1,0,2,0,3.5,NA,24.4,NA
+"tufted evening primrose",2,0,1,0,0,3,0,3,0,29,NA,10.7,NA
+"upright prairie coneflower",2,1,1,0,0,5,0,20,0,24.4,NA,9.3,NA
+"Missouri goldenrod",3,0,1,0,0,2,1,2,1,2.5,2,12.5,13
+"swamp milkweed",3,0,0,1,0,34,0,54,0,28.9,NA,8.3,NA
+"purple prairie clover",3,0,1,1,0,9,0,14,0,41.6,NA,6.7,NA
+"Goodding's willow",3,0,1,0,0,9,0,24,0,31,NA,12.3,NA
+"white heath aster",3,1,1,1,0,5,0,11,0,30.7,NA,7.7,NA
+"rubber rabbitbrush",4,0,1,0,0,24,5,84,21,30.7,35.5,10,10.8
+"horsetail milkweed",4,0,1,0,0,9,6,30,19,26.2,21.4,13.8,15.3
+"broadleaf milkweed",4,0,1,1,0,2,2,2,2,18,18,7.8,7.8
+"common milkweed",4,0,0,1,0,130,0,278,0,29.4,NA,9.5,NA
+"lanceleaf tickseed",4,1,0,1,0,8,0,9,0,30.1,NA,11.2,NA
+"blackeyed Susan",4,0,1,1,0,30,0,53,0,25.9,NA,11.1,NA
+"wrinkleleaf goldenrod",4,1,0,1,0,4,0,5,0,73.8,NA,4.5,NA
+"Canada goldenrod",4,1,0,0,0,10,0,12,0,11.2,NA,10.3,NA
+"seaside goldenrod",4,1,0,0,0,9,0,16,0,41.4,NA,11.6,NA
+"New England aster",4,1,0,1,0,24,0,51,0,36.4,NA,8.5,NA
