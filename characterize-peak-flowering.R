@@ -428,6 +428,18 @@ openest2_spp <- spp %>%
   # Rubber rabbitbrush (40; NM)
   # New England aster (26; LA, OK)
 
+# What do the red maple data look like?
+plantyr2_rm <- plantyr2 %>%
+  filter(common_name == "red maple")
+plantyr2_rm %>%
+  group_by(sc) %>%
+  summarize(n_plants = length(unique(individual_id)),
+            n_plantyrs = n(),
+            mn_n_obs = round(mean(n_obs), 1),
+            mn_obs_interval = round(mean(open_est_interval_mn), 1),
+            n_plantyrs_interval7 = sum(open_est_interval_mn <= 7)) %>%
+  data.frame()
+
 # Attach an indicator to peak_df, identifying plant years with sufficient data
 plantyr2$peak_sufficient <- 1
 peak_df <- peak_df %>%
