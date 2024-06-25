@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-06-24
+# 2024-06-25
 ################################################################################
 
 require(dplyr)
@@ -14,10 +14,10 @@ require(lubridate)
 require(stringr)
 require(tidyr)
 require(ggplot2)
+library(cowplot)
 library(terra)
 library(tidyterra)
 library(mgcv)
-library(gridExtra)
 
 rm(list = ls())
 
@@ -44,8 +44,9 @@ species <- ofss %>%
 # Load processed NPN status/intensity data and format -------------------------#
 df <- read.csv("data/flower-status-intensities-priorityspp.csv")
 
-# Rename/remove columns where necessary
+# Rename/remove columns where necessary and obs with open flower status = NA
 df <- df %>%
+  filter(!is.na(status_fo)) %>%
   rename(lat = latitude,
          lon = longitude,
          plant_id = individual_id) %>%
@@ -94,7 +95,7 @@ df1 <- df %>%
   # Add an indicator for plants southcentral states
   mutate(sc = 1 * state %in% c("LA", "NM", "OK", "TX"))
 
-# Create heat map -------------------------------------------------------------#
+# Create figure(s) with weekly proportion of plants with open flowers ---------#
 # Eventually, we'll want to automate this and cycle through species, but for
 # now try going through the process for 1-2 species
 
@@ -160,16 +161,18 @@ spp_nobs <- rbind(spp_nobs, overall)
 spp_nobs
 
 # For buttonbush, mean number of observations each week in the SC region is 
-# < 5 for every year, but 10.3 across all years, so I think we only have that
+# < 5 for every year, but 10.2 across all years, so I think we only have that
 # option. Will need to automate this in some way......
 
 # Set threshold for mean number of plants observed each week in weeks 10-40
 weekly_nobs_min <- 8
 
-sppyears <- spp_nobs %>% filter(nobs_weeklymn_sc >= weekly_nobs_min)
+sppyears <- spp_nobs %>% 
+  filter(nobs_weeklymn_sc >= weekly_nobs_min)
 if (nrow(sppyears) == 0) {
   warning("Data are insufficient to characterize open flower phenophase for ", 
           spp)
+  # Add a next here, so we skip the rest of the species loop
 } else{
   if (nrow(sppyears) == 1) {
     message("Can only characterize open flower phenophase for ", spp, 
@@ -180,3 +183,116 @@ if (nrow(sppyears) == 0) {
   }
 }
 
+if (nrow(sppyears) > 1) {
+  # Create figures for each year with sufficient data
+}
+
+# Format data for figures with all years combined
+prop_allyrs <- sppdat %>%
+  group_by(sc, wk, wk_doy) %>%
+  summarize(n_obs = n(),
+            n_open = sum(status_fo),
+            .groups = "keep") %>%
+  data.frame() %>%
+  mutate(prop_open = n_open / n_obs) %>%
+  mutate(sc_f = as.factor(ifelse(sc == 0, "Other", "SC")))
+
+# Compare proportions for plants in/out of SC region
+prop_plot <- ggplot(data = prop_allyrs,
+                    aes(x = wk_doy, y = prop_open, group = sc_f)) + 
+  geom_point(aes(color = sc_f, size = n_obs), alpha = alphaline) +
+  geom_line(aes(color = sc_f), alpha = alphaline) +
+  scale_color_manual(values = c("blue", "red")) +
+  labs(y = paste0("Proportion of plants with open flowers"), 
+       x = "Day of year") +
+  annotate("text", x = 365, y = 0.98, label = spp,
+           hjust = 1, vjust = 1, fontface = 2) +
+  labs(color = "Region", size = "No. obs") +
+  theme(text = element_text(size = 10),
+        legend.text = element_text(size = 8))
+prop_plot
+  # Sample sizes a lot smaller, but it does look like plants in SC region might
+  # flower earlier and have more of a secondary peak in fall
+
+# Focusing on SC region only
+propSC_allyrs <- prop_allyrs %>%
+  filter(sc == 1)
+
+# GAM
+gam1 <- gam(prop_open ~ s(wk_doy, bs = "cc", k = 20), weights = n_obs,
+            data = propSC_allyrs, method = "REML", family = "binomial")
+summary(gam1)
+# Make predictions
+gam1_preds <- data.frame(wk_doy = 1:365)
+gam1_preds <- cbind(gam1_preds,
+                    as.data.frame(predict(gam1,
+                                          newdata = gam1_preds,
+                                          type = "link",
+                                          se.fit = TRUE))) %>%
+  rename(fitl = fit) %>%
+  mutate(lcll = fitl - 1.96 * se.fit,
+         ucll = fitl + 1.96 * se.fit,
+         fit = exp(fitl) / (1 + exp(fitl)),
+         lcl = exp(lcll) / (1 + exp(lcll)),
+         ucl = exp(ucll) / (1 + exp(ucll))) %>%
+  select(-c(lcll, ucll))
+
+# Figure with GAM predictions on top of raw proportions
+gam1_plot <- ggplot(data = propSC_allyrs, aes(x = wk_doy, y = prop_open)) + 
+  geom_point(aes(size = n_obs), alpha = alphaline, color = "coral1") +
+  geom_line(alpha = alphaline, color = "coral1") +
+  geom_ribbon(data = gam1_preds, aes(x = wk_doy, y = fit, ymin = lcl, ymax = ucl), 
+              color = "gray", alpha = alphapoly, linetype = 0) +
+  geom_line(data = gam1_preds, aes(x = wk_doy, y = fit)) +
+  labs(y = paste0("Proportion of plants with open flowers"), 
+       x = "Day of year",
+       size = "No. obs") +
+  annotate("text", x = 365, y = 0.98, label =  spp,
+           hjust = 1, vjust = 1, fontface = 2) +
+  theme(text = element_text(size = 10),
+        legend.text = element_text(size = 8))
+gam1_plot
+
+# Heat map
+propSC_allyrs <- propSC_allyrs %>%
+  mutate(tile_ht = 0.5,
+         wk_doy_c = wk_doy + 3)
+
+
+g1 <- ggplot(propSC_allyrs) +
+  geom_tile(aes(x = wk_doy_c, y = tile_ht, fill = prop_open)) +
+  scale_fill_gradient(low = "gray90", high = "blue") +
+  labs(x = "Day of year", fill = "Proportion \nopen") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(expand = c(0.01, 0.01)) +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line.y.right = element_line(color = "black"),
+        panel.background = element_rect(fill = "white"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 10),
+        legend.text = element_text(size = 8),
+        legend.position = "left",
+        legend.margin = margin(c(5, 0, 5, 1)))
+
+g2 <- ggplot(propSC_allyrs) +
+  geom_col(aes(x = wk_doy_c, y = n_obs), fill = "gray70") +
+  geom_hline(yintercept = weekly_nobs_min, 
+             linetype = "dashed", color = "steelblue") +
+  labs(x = "Day of year", y = "No. observations") +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(expand = c(0.01, 0.01)) +
+  theme(axis.line = element_line(color = "black"),
+        axis.line.y.right = element_line(color = "black"),
+        panel.background = element_rect(fill = "white"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text = element_text(size = 10))
+
+plot_grid(g1, g2, nrow = 2, rel_heights = c(2, 1), align = "v")
+
+# TODO: standardize colors (SC/other) across figure types
+# Change y-axis labels from doy to Month?
+# Explore text size given ultimate size of figure on info sheet
