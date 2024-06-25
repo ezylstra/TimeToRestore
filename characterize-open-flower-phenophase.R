@@ -116,39 +116,37 @@ states <- subset(states,
                  !states$STUSPS %in% c("HI", "AK", "VI", "MP", "GU", "PR", "AS"))
 
 # Visualize zones (specifying levels so zones appear in logical order)
-ggplot(zones) + 
-  geom_spatvector(aes(fill = factor(zone, 
-                                    levels = paste0(rep(3:12, each = 2), 
-                                                    rep(c("a", "b"))))), 
-                  col = NA) +
-  scale_fill_whitebox_d(palette = "muted", name = "Zone") +
-  geom_spatvector(data = states, aes(fill = NA)) +
-  geom_spatvector(data = sitesv, size = 0.3)
+# ggplot(zones) + 
+#   geom_spatvector(aes(fill = factor(zone, 
+#                                     levels = paste0(rep(3:12, each = 2), 
+#                                                     rep(c("a", "b"))))), 
+#                   col = NA) +
+#   scale_fill_whitebox_d(palette = "muted", name = "Zone") +
+#   geom_spatvector(data = states, aes(fill = NA)) +
+#   geom_spatvector(data = sitesv, size = 0.3)
 
 # What if we just used zones 7-9?
-ggplot(subset(zones, zones$zone %in% c("7a", "7b", "8a", "8b", "9a", "9b"))) + 
-  geom_spatvector(aes(fill = factor(zone)), col = NA) +
-  scale_fill_whitebox_d(palette = "muted", name = "Zone") +
-  geom_spatvector(data = states, aes(fill = NA)) +
-  geom_spatvector(data = sitesv, size = 0.3)
+# ggplot(subset(zones, zones$zone %in% c("7a", "7b", "8a", "8b", "9a", "9b"))) + 
+#   geom_spatvector(aes(fill = factor(zone)), col = NA) +
+#   scale_fill_whitebox_d(palette = "muted", name = "Zone") +
+#   geom_spatvector(data = states, aes(fill = NA)) +
+#   geom_spatvector(data = sitesv, size = 0.3)
 
 # Likely want to restrict things by latitude (38-deg N?)
 zext38 <- ext(zones)
 zext38[4] <- 38
 zones38 <- crop(zones, zext38)
 
-ggplot() +
-  geom_spatvector(data = states, aes(fill = NA)) +
-  geom_spatvector(data = subset(zones38, 
-                         zones38$zone %in% c("7a", "7b", "8a", 
-                                             "8b", "9a", "9b")),
-                  aes(fill = factor(zone)), col = NA) +
-  scale_fill_whitebox_d(palette = "muted", name = "Zone") +
-  geom_spatvector(data = states, aes(fill = NA)) +
-  geom_spatvector(data = sitesv, size = 0.3)
+# ggplot() +
+#   geom_spatvector(data = states, aes(fill = NA)) +
+#   geom_spatvector(data = subset(zones38, 
+#                          zones38$zone %in% c("7a", "7b", "8a", 
+#                                              "8b", "9a", "9b")),
+#                   aes(fill = factor(zone)), col = NA) +
+#   scale_fill_whitebox_d(palette = "muted", name = "Zone") +
+#   geom_spatvector(data = states, aes(fill = NA)) +
+#   geom_spatvector(data = sitesv, size = 0.3)
 
-# Use precipitation to further restrict things?
-  
 # Extract zone associated with each site
 e <- terra::intersect(sitesv, zones)
 sites <- as.data.frame(e, geom = "XY") %>%
