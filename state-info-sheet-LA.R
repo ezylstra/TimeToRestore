@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-06-25
+# 2024-07-08
 ################################################################################
 
 require(dplyr)
@@ -22,15 +22,20 @@ library(mgcv)
 rm(list = ls())
 
 # Set figure parameters -------------------------------------------------------#
-alphaline <- 0.3
+alphaline <- 0.6 # 0.3
 alphapoly <- 0.4
 figw <- 6.5
 figh <- 3
+whitebox_palette <- "soft" # muted, atlas
+# See: https://dieghernan.github.io/tidyterra/reference/scale_whitebox.html
+cols2 <- whitebox.colors(n = 2, palette = whitebox_palette)
 
 # Load csv with sample sizes for weekly proportion of plants with open flowers #
 ofss <- read.csv("data/openflower_weeklyobs_samplesizes.csv")
 
 # Identify priority species with sufficient data ------------------------------#
+# Selecting priority species for LA that average 6 or more observations in the
+# southcentral region per week (for all years combined)
 species <- ofss %>%
   filter(LA == 1) %>%
   filter(mn_wkobs_sc >= 6) %>%
@@ -41,10 +46,17 @@ species <- ofss %>%
 # Save for later. May need to do a new download. Want to grab flowering tag if
 # possible.
 
+# Load shapefile with state boundaries ----------------------------------------# 
+states <- vect("data/states/cb_2017_us_state_500k.shp")
+states <- subset(states, 
+                 !states$STUSPS %in% c("HI", "AK", "VI", "MP", "GU", "PR", "AS"))
+states$sc <- as.factor(ifelse(states$STUSPS %in% c("LA", "NM", "OK", "TX"), 1, 0))
+
 # Load processed NPN status/intensity data and format -------------------------#
 df <- read.csv("data/flower-status-intensities-priorityspp.csv")
 
-# Rename/remove columns where necessary and obs with open flower status = NA
+# Rename/remove columns where necessary and remove obs with open flower 
+# status = NA
 df <- df %>%
   filter(!is.na(status_fo)) %>%
   rename(lat = latitude,
@@ -72,17 +84,20 @@ df <- df %>%
   filter(plant_yr %in% samples$plant_yr)
 
 # Add week to data, so we can calculate weekly proportions
-  # We'll be creating wk_doy column to assign each week with a day of the year.
-  # If we want this date to be the start of each week (eg, date for week 1 would 
-  # be Jan 1), then set day_of_week = 1. If we want the date to be mid week 
-  # (Thursday) then set day_of_week = 4. 
-  day_of_week <- 1
+  # We'll be creating wk_doy columns to assign each week with a day of the year.
+  # wk_doy1 = start of each week (eg, date for week 1 would be Jan 1)
+  # wk_doy4 = middle of each week (eg, date for week 1 would be Jan 4)
   df <- df %>%
-    mutate(wk = week(observation_date),
-           wk_date = parse_date_time(paste(2024, wk, day_of_week, sep = "/"), 
-                                          "Y/W/w"),
-           wk_date = as.Date(wk_date),
-           wk_doy = yday(wk_date))
+    mutate(wk = week(observation_date)) %>%
+    # Remove observations in week 53
+    filter(wk < 53) %>%
+    # Create wk_doy columns
+    mutate(wk_date1 = parse_date_time(paste(2024, wk, 1, sep = "/"), "Y/W/w"),
+           wk_date1 =  as.Date(wk_date1),
+           wk_doy1 = yday(wk_date1),
+           wk_date4 = parse_date_time(paste(2024, wk, 4, sep = "/"), "Y/W/w"),
+           wk_date4 =  as.Date(wk_date4),
+           wk_doy4 = yday(wk_date4))
 
 # Just keep one observation of each plant, each week. Sort so the most
 # advanced phenophase gets kept (if more than one value in a week)
@@ -90,8 +105,6 @@ df1 <- df %>%
   arrange(common_name, plant_id, year, wk, 
           desc(status_fl), desc(status_fo)) %>%
   distinct(plant_id, year, wk, .keep_all = TRUE) %>%
-  # Remove week 53
-  filter(wk != 53) %>%
   # Add an indicator for plants southcentral states
   mutate(sc = 1 * state %in% c("LA", "NM", "OK", "TX"))
 
@@ -113,11 +126,6 @@ sppsites <- sppdat %>%
 
 # Plot locations of monitored plants
 sppsitesv <- vect(sppsites, geom = c("lon", "lat"), crs = "epsg:4269")
-states <- vect("data/states/cb_2017_us_state_500k.shp")
-states <- subset(states, 
-                 !states$STUSPS %in% c("HI", "AK", "VI", "MP", "GU", "PR", "AS"))
-states$sc <- as.factor(ifelse(states$STUSPS %in% c("LA", "NM", "OK", "TX"), 1, 0))
-
 ggplot(data = states) +
   geom_spatvector(aes(fill = sc), color = "gray30") +
   scale_fill_discrete(type = c("white", "gray80"), guide = "none") +
@@ -125,6 +133,7 @@ ggplot(data = states) +
   scale_color_discrete(type = c("steelblue3", "red"), guide = "none")
 
 # Calculate how much data available in region, by year and across years
+# (focus on weeks 10-40)
 spp_nobs <- sppdat %>%
   group_by(year) %>%
   summarize(nplants = length(unique(plant_id)),
@@ -189,7 +198,7 @@ if (nrow(sppyears) > 1) {
 
 # Format data for figures with all years combined
 prop_allyrs <- sppdat %>%
-  group_by(sc, wk, wk_doy) %>%
+  group_by(sc, wk, wk_date1, wk_doy1, wk_date4, wk_doy4) %>%
   summarize(n_obs = n(),
             n_open = sum(status_fo),
             .groups = "keep") %>%
@@ -197,33 +206,52 @@ prop_allyrs <- sppdat %>%
   mutate(prop_open = n_open / n_obs) %>%
   mutate(sc_f = as.factor(ifelse(sc == 0, "Other", "SC")))
 
+# To create a figure with ticks between month labels on the x axis, need to do a 
+# little extra work. 
+  # Dates where we want month labels (15th of month)
+  x_lab <- as.Date(paste0("2024-", 1:12, "-15"))
+  # Dates where we want ticks (1st of month)
+  x_tick <- as.Date(c(paste0("2024-", 1:12, "-01"), "2025-01-01"))
+  n_x_tick <- length(x_tick)
+  # Will specify axis breaks & ticks at 1st and 15th of month. Make labels on
+  # the 1st black and change color of tick marks on the 15th to NA.
+
 # Compare proportions for plants in/out of SC region
 prop_plot <- ggplot(data = prop_allyrs,
-                    aes(x = wk_doy, y = prop_open, group = sc_f)) + 
+                    aes(x = wk_date4, y = prop_open, group = sc_f)) + 
   geom_point(aes(color = sc_f, size = n_obs), alpha = alphaline) +
   geom_line(aes(color = sc_f), alpha = alphaline) +
-  scale_color_manual(values = c("blue", "red")) +
-  labs(y = paste0("Proportion of plants with open flowers"), 
-       x = "Day of year") +
-  annotate("text", x = 365, y = 0.98, label = spp,
+  scale_color_whitebox_d(palette = whitebox_palette) +
+  scale_x_continuous(breaks = c(x_lab, x_tick),
+                     labels = c(month.abb, rep("", n_x_tick))) +
+  labs(y = paste0("Proportion of plants with open flowers")) +
+  annotate("text", x = as.Date("2024-12-31"), y = 0.98, label = spp,
            hjust = 1, vjust = 1, fontface = 2) +
   labs(color = "Region", size = "No. obs") +
   theme(text = element_text(size = 10),
-        legend.text = element_text(size = 8))
-prop_plot
-  # Sample sizes a lot smaller, but it does look like plants in SC region might
-  # flower earlier and have more of a secondary peak in fall
+        legend.text = element_text(size = 8),
+        axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                              rep("black", n_x_tick))),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                                    rep("white", n_x_tick))),
+        axis.title.x = element_blank())
+prop_plot  
+# Sample sizes a lot smaller, but it does look like plants in SC region might
+# flower earlier and have more of a secondary peak in fall
 
 # Focusing on SC region only
 propSC_allyrs <- prop_allyrs %>%
   filter(sc == 1)
 
 # GAM
-gam1 <- gam(prop_open ~ s(wk_doy, bs = "cc", k = 20), weights = n_obs,
+gam1 <- gam(prop_open ~ s(wk_doy4, bs = "cc", k = 20), weights = n_obs,
             data = propSC_allyrs, method = "REML", family = "binomial")
 summary(gam1)
 # Make predictions
-gam1_preds <- data.frame(wk_doy = 1:365)
+gam1_preds <- data.frame(
+  wk_doy4 = min(propSC_allyrs$wk_doy4):max(propSC_allyrs$wk_doy4),
+  wk_date4 = as.Date(min(propSC_allyrs$wk_date4):max(propSC_allyrs$wk_date4)))
 gam1_preds <- cbind(gam1_preds,
                     as.data.frame(predict(gam1,
                                           newdata = gam1_preds,
@@ -238,37 +266,48 @@ gam1_preds <- cbind(gam1_preds,
   select(-c(lcll, ucll))
 
 # Figure with GAM predictions on top of raw proportions
-gam1_plot <- ggplot(data = propSC_allyrs, aes(x = wk_doy, y = prop_open)) + 
-  geom_point(aes(size = n_obs), alpha = alphaline, color = "coral1") +
-  geom_line(alpha = alphaline, color = "coral1") +
-  geom_ribbon(data = gam1_preds, aes(x = wk_doy, y = fit, ymin = lcl, ymax = ucl), 
+gam1_plot <- ggplot(data = propSC_allyrs, 
+                    aes(x = wk_date4, y = prop_open)) + 
+  geom_point(aes(size = n_obs), alpha = alphaline, color = cols2[2]) +
+  geom_line(alpha = alphaline, color = cols2[2]) +
+  geom_ribbon(data = gam1_preds, 
+              aes(x = wk_date4, y = fit, ymin = lcl, ymax = ucl), 
               color = "gray", alpha = alphapoly, linetype = 0) +
-  geom_line(data = gam1_preds, aes(x = wk_doy, y = fit)) +
+  geom_line(data = gam1_preds, aes(x = wk_date4, y = fit)) +
+  scale_x_continuous(breaks = c(x_lab, x_tick),
+                     labels = c(month.abb, rep("", n_x_tick))) +
   labs(y = paste0("Proportion of plants with open flowers"), 
-       x = "Day of year",
        size = "No. obs") +
-  annotate("text", x = 365, y = 0.98, label =  spp,
+  annotate("text", x = as.Date("2024-12-31"), y = 0.98, label =  spp,
            hjust = 1, vjust = 1, fontface = 2) +
   theme(text = element_text(size = 10),
-        legend.text = element_text(size = 8))
+        legend.text = element_text(size = 8),
+        axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                              rep("black", n_x_tick))),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                                    rep("white", n_x_tick))),
+        axis.title.x = element_blank())
 gam1_plot
 
 # Heat map
 propSC_allyrs <- propSC_allyrs %>%
-  mutate(tile_ht = 0.5,
-         wk_doy_c = wk_doy + 3)
-
+  mutate(tile_ht = 0.5)
 
 g1 <- ggplot(propSC_allyrs) +
-  geom_tile(aes(x = wk_doy_c, y = tile_ht, fill = prop_open)) +
-  scale_fill_gradient(low = "gray90", high = "blue") +
-  labs(x = "Day of year", fill = "Proportion \nopen") +
+  geom_tile(aes(x = wk_date4, y = tile_ht, fill = prop_open)) +
+  scale_fill_gradient(low = "gray95", high = cols2[2]) +
+  labs(fill = "Proportion \nopen") +
   scale_y_continuous(expand = c(0, 0)) +
-  scale_x_continuous(expand = c(0.01, 0.01)) +
-  theme(axis.title.y = element_blank(),
+  scale_x_continuous(breaks = c(x_lab, x_tick),
+                     labels = c(month.abb, rep("", n_x_tick)),
+                     expand = c(0.01, 0.01)) +
+  theme(axis.title = element_blank(),
         axis.text.y = element_blank(),
         axis.ticks.y = element_blank(),
         axis.line.y.right = element_line(color = "black"),
+        axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                              rep("black", n_x_tick))),
         panel.background = element_rect(fill = "white"),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -278,14 +317,18 @@ g1 <- ggplot(propSC_allyrs) +
         legend.margin = margin(c(5, 0, 5, 1)))
 
 g2 <- ggplot(propSC_allyrs) +
-  geom_col(aes(x = wk_doy_c, y = n_obs), fill = "gray70") +
+  geom_col(aes(x = wk_date4, y = n_obs), fill = "gray70") +
   geom_hline(yintercept = weekly_nobs_min, 
-             linetype = "dashed", color = "steelblue") +
-  labs(x = "Day of year", y = "No. observations") +
+             linetype = "dashed", color = "black") +
+  labs(y = "No. observations") +
   scale_y_continuous(expand = c(0, 0)) +
-  scale_x_continuous(expand = c(0.01, 0.01)) +
+  scale_x_continuous(breaks = c(x_lab, x_tick),
+                     labels = c(month.abb, rep("", n_x_tick)),
+                     expand = c(0.01, 0.01)) +
   theme(axis.line = element_line(color = "black"),
-        axis.line.y.right = element_line(color = "black"),
+        axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                              rep("black", n_x_tick))),
+        axis.title.x = element_blank(),
         panel.background = element_rect(fill = "white"),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -293,6 +336,3 @@ g2 <- ggplot(propSC_allyrs) +
 
 plot_grid(g1, g2, nrow = 2, rel_heights = c(2, 1), align = "v")
 
-# TODO: standardize colors (SC/other) across figure types
-# Change y-axis labels from doy to Month?
-# Explore text size given ultimate size of figure on info sheet
