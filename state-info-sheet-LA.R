@@ -112,7 +112,7 @@ df1 <- df %>%
 # Eventually, we'll want to automate this and cycle through species, but for
 # now try going through the process for 1-2 species
 
-i = 1
+i = 4
 
 # Extract data for a species
 spp <- species$common_name[i]
@@ -172,6 +172,9 @@ spp_nobs
 # For buttonbush, mean number of observations each week in the SC region is 
 # < 5 for every year, but 10.2 across all years, so I think we only have that
 # option. Will need to automate this in some way......
+# Similar for eastern baccharis
+# Similar for trumpet honeysuckle, except there we have even less data (average
+  # 6.1 plants observed each week, across years)
 
 # Set threshold for mean number of plants observed each week in weeks 10-40
 weekly_nobs_min <- 8
@@ -237,17 +240,34 @@ prop_plot <- ggplot(data = prop_allyrs,
                                                     rep("white", n_x_tick))),
         axis.title.x = element_blank())
 prop_plot  
-# Sample sizes a lot smaller, but it does look like plants in SC region might
-# flower earlier and have more of a secondary peak in fall
+# Does open flower phenology look different in SC region than in the rest of
+# the US?
 
 # Focusing on SC region only
 propSC_allyrs <- prop_allyrs %>%
   filter(sc == 1)
 
 # GAM
-gam1 <- gam(prop_open ~ s(wk_doy4, bs = "cc", k = 20), weights = n_obs,
-            data = propSC_allyrs, method = "REML", family = "binomial")
+# Looking at the red maple data illustrated a weird problem that can occur. If
+# k is set relatively high then sometimes you get a very wide credible interval
+# around predictions for a portion of the year when the curve is flat (no plants
+# flowering). In these cases, better to set k much lower, and then check that 
+# model fit is adequate.
+k_values <- seq(5, 20, by = 5)
+
+for (k_index in 1:4) {
+  gam1 <- gam(prop_open ~ s(wk_doy4, bs = "cc", k = k_values[k_index]), weights = n_obs,
+              data = propSC_allyrs, method = "REML", family = "binomial")
+  k_p <- k.check(gam1)[,"p-value"] 
+  if(k_p > 0.1) break()
+}
+if (k_p <= 0.1 & k_index == 4) {
+  warning("k value of 20 still results in poor model fit.")
+} 
+
 summary(gam1)
+message("k set at ", k_values[k_index])
+
 # Make predictions
 gam1_preds <- data.frame(
   wk_doy4 = min(propSC_allyrs$wk_doy4):max(propSC_allyrs$wk_doy4),
