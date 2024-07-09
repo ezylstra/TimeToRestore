@@ -2,11 +2,12 @@
 # Downloading iNaturalist data
 
 # Erin Zylstra
-# 2024-05-01
+# 2024-07-09
 ################################################################################
 
 library(rgbif)
 library(dplyr)
+library(stringr)
 
 # Going to try downloading iNaturalist data through the rgbif package, which 
 # seems to be better supported and updated than the rinat package. 
@@ -18,6 +19,9 @@ spp <- read.csv("data/priority-species.csv") %>%
 # Remove species from list if they don't have species_id in NPN database
 spp <- spp %>%
   filter(!is.na(species_id))
+
+# Identify years of interest (using same period we used for NPN data)
+yrs <- 2013:2023
 
 # Get list of scientific names
 name_list <- c(spp$sci_names)
@@ -37,12 +41,13 @@ occ_download(
   pred_default(),
   pred_in("speciesKey", spp$taxonkey),
   pred("country", "US"),
+  pred_in("year", yrs),
   pred("datasetKey", "50c9509d-22c7-4a22-a47d-8c48425ef4a7"),
   format = "SIMPLE_CSV"
 )
 
 # This prints some stuff, including a Download key.
-dk <- "0010217-240425142415019"
+dk <- "0018473-240626123714530"
 
 # Check the status of download:
 occ_download_wait(dk)
@@ -86,18 +91,27 @@ if (all(inat$occurrenceStatus == "PRESENT")) {
   warning("Not all occurrenceStatus == PRESENCE")
 }
 
-# Remove the original csv file and write this smaller one to file
-file.remove(inat_filename)
-write.csv(inat, inat_filename, row.names = FALSE)
+# Add in common name
+inat <- inat %>%
+  left_join(select(spp, c(sci_names, common_name)), 
+            by = c("species" = "sci_names"))
 
-# Note that we haven't filtered by year. There are <=10 records/year for all
-# species combined prior to 2000.
+# Leave code below commented out until we're sure we want to create new iNat
+# dataset
+
+# Save csv and put in a zip file. Remove csv and original zip file (it's huge)
+  # write.csv(inat, inat_filename, row.names = FALSE)
+  # zip_filename <- str_replace(inat_filename, ".csv", ".zip")
+  # zip(zip_filename, files = inat_filename)
+
+# Remove csv
+  # file.remove(inat_filename)
 
 # How many records for each species in the 4 target states?
 states4 <- c("Louisiana", "New Mexico", "Oklahoma", "Texas")
 inat <- inat %>%
   mutate(states4 = ifelse(state %in% states4, 1, 0))
 # Counts in CASC states, combined
-count(filter(inat, states4 == 1), species)
+count(filter(inat, states4 == 1), common_name)
 # Counts for each CASC state
-table(inat$species[inat$states4 == 1], inat$state[inat$states4 == 1])
+table(inat$common_name[inat$states4 == 1], inat$state[inat$states4 == 1])

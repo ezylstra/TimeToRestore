@@ -3,5 +3,5 @@
 .RData
 .Ruserdata
 
-# Zip files with iNat data
-data/iNat/*.zip
+# Zip files with original iNat data (zip filenames always start with a number)
+data/iNat/[0-9]*.zip
