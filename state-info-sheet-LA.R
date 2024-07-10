@@ -6,7 +6,7 @@
 # See: https://github.com/alyssarosemartin/time-to-restore
 
 # Erin Zylstra
-# 2024-07-08
+# 2024-07-09
 ################################################################################
 
 require(dplyr)
@@ -42,9 +42,18 @@ species <- ofss %>%
   select(!contains("z789"))
   # Note: no restrictions based on number of plant-years
 
-# Load iNat data --------------------------------------------------------------#
-# Save for later. May need to do a new download. Want to grab flowering tag if
-# possible.
+# Load and subset iNat data ---------------------------------------------------#
+inat_zip <- "data/iNat/inaturalist-41spp.zip"
+inat_csv <- str_replace(inat_zip, ".zip", ".csv")
+unzip(zipfile = inat_zip)
+inat <- read.csv(inat_csv)
+file.remove(inat_csv)
+
+# Extract data for state priority species
+spp_names <- species$common_name
+inat <- inat %>%
+  select(common_name, species, state, lat, lon, coord_uncert, year, month, day) %>%
+  filter(common_name %in% spp_names)
 
 # Load shapefile with state boundaries ----------------------------------------# 
 states <- vect("data/states/cb_2017_us_state_500k.shp")
@@ -112,7 +121,7 @@ df1 <- df %>%
 # Eventually, we'll want to automate this and cycle through species, but for
 # now try going through the process for 1-2 species
 
-i = 4
+i = 1
 
 # Extract data for a species
 spp <- species$common_name[i]
@@ -128,9 +137,12 @@ sppsites <- sppdat %>%
 sppsitesv <- vect(sppsites, geom = c("lon", "lat"), crs = "epsg:4269")
 ggplot(data = states) +
   geom_spatvector(aes(fill = sc), color = "gray30") +
-  scale_fill_discrete(type = c("white", "gray80"), guide = "none") +
+  scale_fill_discrete(type = c("white", "gray95"), guide = "none") +
   geom_spatvector(data = sppsitesv, aes(color = sc), size = 1) +
-  scale_color_discrete(type = c("steelblue3", "red"), guide = "none")
+  scale_color_whitebox_d(palette = whitebox_palette, guide = "none") +
+  theme(panel.background = element_rect(fill = rgb(t(col2rgb("lightblue")), 
+                                                   alpha = 0.2 * 255, 
+                                                   maxColorValue = 255)))
 
 # Calculate how much data available in region, by year and across years
 # (focus on weeks 10-40)
@@ -228,8 +240,8 @@ prop_plot <- ggplot(data = prop_allyrs,
   scale_x_continuous(breaks = c(x_lab, x_tick),
                      labels = c(month.abb, rep("", n_x_tick))) +
   labs(y = paste0("Proportion of plants with open flowers")) +
-  annotate("text", x = as.Date("2024-12-31"), y = 0.98, label = spp,
-           hjust = 1, vjust = 1, fontface = 2) +
+  # annotate("text", x = as.Date("2024-12-31"), y = 0.98, label = spp,
+  #          hjust = 1, vjust = 1, fontface = 2) +
   labs(color = "Region", size = "No. obs") +
   theme(text = element_text(size = 10),
         legend.text = element_text(size = 8),
@@ -238,6 +250,7 @@ prop_plot <- ggplot(data = prop_allyrs,
         panel.grid.minor.x = element_blank(),
         panel.grid.major.x = element_line(color = c(rep(NA, n_x_tick - 1), 
                                                     rep("white", n_x_tick))),
+        panel.background = element_rect(fill = "gray95"),
         axis.title.x = element_blank())
 prop_plot  
 # Does open flower phenology look different in SC region than in the rest of
@@ -298,8 +311,8 @@ gam1_plot <- ggplot(data = propSC_allyrs,
                      labels = c(month.abb, rep("", n_x_tick))) +
   labs(y = paste0("Proportion of plants with open flowers"), 
        size = "No. obs") +
-  annotate("text", x = as.Date("2024-12-31"), y = 0.98, label =  spp,
-           hjust = 1, vjust = 1, fontface = 2) +
+  # annotate("text", x = as.Date("2024-12-31"), y = 0.98, label =  spp,
+  #          hjust = 1, vjust = 1, fontface = 2) +
   theme(text = element_text(size = 10),
         legend.text = element_text(size = 8),
         axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
@@ -307,6 +320,7 @@ gam1_plot <- ggplot(data = propSC_allyrs,
         panel.grid.minor.x = element_blank(),
         panel.grid.major.x = element_line(color = c(rep(NA, n_x_tick - 1), 
                                                     rep("white", n_x_tick))),
+        panel.background = element_rect(fill = "gray95"),
         axis.title.x = element_blank())
 gam1_plot
 
@@ -332,9 +346,11 @@ g1 <- ggplot(propSC_allyrs) +
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         text = element_text(size = 10),
+        legend.title = element_text(size = 9),
         legend.text = element_text(size = 8),
-        legend.position = "left",
-        legend.margin = margin(c(5, 0, 5, 1)))
+        legend.position = c(-0.05, 0.5),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 30), "pt"),
+        legend.margin = margin(c(5, 0, 5, 0)))
 
 g2 <- ggplot(propSC_allyrs) +
   geom_col(aes(x = wk_date4, y = n_obs), fill = "gray70") +
@@ -352,7 +368,27 @@ g2 <- ggplot(propSC_allyrs) +
         panel.background = element_rect(fill = "white"),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        text = element_text(size = 10))
+        text = element_text(size = 10),
+        plot.margin = unit(c(5.5, 5.5, 5.5, 30), "pt"))
+heatmap2 <- plot_grid(g1, g2, nrow = 2, rel_heights = c(2, 1), align = "v")
 
-plot_grid(g1, g2, nrow = 2, rel_heights = c(2, 1), align = "v")
-
+# Combining everything for a summary 1 pg page for each species
+prop_pdf <- plot_grid(NULL, prop_plot, NULL, nrow = 1, 
+                           rel_widths = c(0.5, 7.5, 0.5))
+gam1_pdf <- plot_grid(NULL, gam1_plot, NULL, nrow = 1, 
+                      rel_widths = c(0.5, 7.5, 0.5))
+heatmap2_pdf <- plot_grid(NULL, heatmap2, NULL, nrow = 1, 
+                          rel_widths = c(0.5, 7.5, 0.5))
+all_figs <- plot_grid(prop_pdf, gam1_pdf, heatmap2_pdf,
+                      ncol = 1, rel_heights = c(3, 3, 3), align = "v")
+title <- ggdraw() + 
+  draw_label(spp, fontface = "bold", x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 7))
+title_pdf <- plot_grid(NULL, title, NULL, nrow = 1, 
+                       rel_widths = c(0.5, 7.5, 0.5))
+figs_plus_title <- plot_grid(NULL, title_pdf, all_figs, NULL, 
+                             ncol = 1, 
+                             rel_heights = c(0.1, 0.5, 9, 0.5))
+spp2 <- str_replace(spp, " ", "_")
+fig_name <- paste0("output/weekly-open-flower-prop/", spp2, "-figs.pdf")
+ggsave(fig_name, width = 8.5, height = 11, units = "in")
