@@ -1,0 +1,467 @@
+################################################################################
+# For priority species: Evaluate quantity and quality of data available to 
+# visualize weekly proportion of plants with open flowers
+
+# Erin Zylstra
+# 2024-07-10
+################################################################################
+
+require(dplyr)
+require(lubridate)
+require(stringr)
+require(tidyr)
+require(ggplot2)
+require(flextable)
+require(cowplot)
+require(terra)
+require(tidyterra)
+require(mgcv)
+
+rm(list = ls())
+
+# Set figure parameters -------------------------------------------------------#
+  
+  alphaline <- 0.6 # Transparency setting for lines, points
+  alphapoly <- 0.4 # Transparency setting for polygons
+  pdfw <- 8.5 # Width of pdf output
+  pdfh <- 11  # Height of pdf output
+  
+  # Color palettes
+  whitebox_palette <- "soft"
+  # See: https://dieghernan.github.io/tidyterra/reference/scale_whitebox.html
+  cols2 <- whitebox.colors(n = 2, palette = whitebox_palette)
+
+# Load csv with sample sizes for weekly proportion of plants with open flowers #
+  
+  ofss <- read.csv("data/openflower_weeklyobs_samplesizes.csv")
+
+# Identify priority species with sufficient data ------------------------------#
+  
+  # Selecting priority species for that average 6 or more observations in the
+  # southcentral region per week (for all years combined)
+  species <- ofss %>%
+    filter(mn_wkobs_sc >= 6) %>%
+    select(!contains("z789"))
+  
+  # List of common names
+  common_names <- species$common_name
+  
+  # List of common names with underscores for filenames
+  nice_names <- str_replace(common_names, " ", "_")
+  
+  spp_states <- species %>%
+    select(LA, NM, OK, TX) %>%
+    mutate(LA = ifelse(LA == 1, "LA", NA), 
+           NM = ifelse(NM == 1, "NM", NA),
+           OK = ifelse(OK == 1, "OK", NA),
+           TX = ifelse(TX == 1, "TX", NA)) %>%
+    unite("states", LA:TX, sep = ", ", na.rm = TRUE)
+  
+  # List of species, with priority info, for titles on species summary sheets
+  species_titles <- paste0(str_to_sentence(common_names),
+                           " (priority in ", spp_states$states, ")")
+
+# Load shapefile with state boundaries ----------------------------------------# 
+  
+  states <- vect("data/states/cb_2017_us_state_500k.shp")
+  states <- subset(states, 
+                   !states$STUSPS %in% c("HI", "AK", "VI", "MP", 
+                                         "GU", "PR", "AS"))
+  states$sc <- as.factor(ifelse(states$STUSPS %in% c("LA", "NM", "OK", "TX"), 
+                                1, 0))
+
+# Load processed NPN status/intensity data and format -------------------------#
+  
+  df <- read.csv("data/flower-status-intensities-priorityspp.csv")
+  
+  # Extract data for species that had sufficient data in SC region
+  df <- df %>%
+    filter(common_name %in% common_names)
+  
+  # Rename/remove columns where necessary and remove obs with open flower 
+  # status = NA
+  df <- df %>%
+    filter(!is.na(status_fo)) %>%
+    rename(lat = latitude,
+           lon = longitude,
+           plant_id = individual_id) %>%
+    select(-c(person_id, n_observations))
+  
+  # Summarize data by plant-year
+  samples <- df %>%
+    group_by(common_name, plant_id, site_id, state, year) %>%
+    summarize(n_obs = n(),                      # No. of daily observations
+              n_status_fl = sum(!is.na(status_fl)),  # No. of flower status obs
+              n_status_fo = sum(!is.na(status_fo)),  # No. of open flower status obs
+              n_value_fl = sum(!is.na(midpoint_fl)), # No. of flower intensity values
+              n_value_fo = sum(!is.na(midpoint_fo)), # No. of open flower intensity values
+              .groups = "keep") %>%
+    data.frame()
+  
+  # Remove any plant year with no open flower status recorded
+  samples <- samples %>% 
+    filter(n_status_fo > 0) %>%
+    mutate(plant_yr = paste(plant_id, year, sep = "_"))
+  df <- df %>%
+    mutate(plant_yr = paste(plant_id, year, sep = "_")) %>%
+    filter(plant_yr %in% samples$plant_yr)
+  
+  # Add week to data, so we can calculate weekly proportions
+    # We'll be creating wk_doy columns to assign each week with a day of the year.
+    # wk_doy1 = start of each week (eg, date for week 1 would be Jan 1)
+    # wk_doy4 = middle of each week (eg, date for week 1 would be Jan 4)
+    df <- df %>%
+      mutate(wk = week(observation_date)) %>%
+      # Remove observations in week 53
+      filter(wk < 53) %>%
+      # Create wk_doy columns
+      mutate(wk_date1 = parse_date_time(paste(2024, wk, 1, sep = "/"), "Y/W/w"),
+             wk_date1 =  as.Date(wk_date1),
+             wk_doy1 = yday(wk_date1),
+             wk_date4 = parse_date_time(paste(2024, wk, 4, sep = "/"), "Y/W/w"),
+             wk_date4 =  as.Date(wk_date4),
+             wk_doy4 = yday(wk_date4))
+  
+  # Just keep one observation of each plant, each week. Sort so the most
+  # advanced phenophase gets kept (if more than one value in a week)
+  df1 <- df %>%
+    arrange(common_name, plant_id, year, wk, 
+            desc(status_fl), desc(status_fo)) %>%
+    distinct(plant_id, year, wk, .keep_all = TRUE) %>%
+    # Add an indicator for plants southcentral states
+    mutate(sc = 1 * state %in% c("LA", "NM", "OK", "TX"))
+
+# Loop through species, creating summary table and figures --------------------#
+
+for (i in 1:length(common_names)) {
+
+  # Extract data for a species
+  spp <- common_names[i]
+  sppdat <- df1 %>% filter(common_name == spp)
+  
+  # Isolate location information
+  sppsites <- sppdat %>%
+    select(site_id, lat, lon, state, sc) %>%
+    distinct() %>%
+    mutate(sc = as.factor(sc))
+
+  # Create map with locations of monitored plants
+  sppsitesv <- vect(sppsites, geom = c("lon", "lat"), crs = "epsg:4269")
+  spp_map <- ggplot(data = states) +
+    geom_spatvector(aes(fill = sc), color = "gray60") +
+    scale_fill_discrete(type = c("white", "gray95"), guide = "none") +
+    geom_spatvector(data = sppsitesv, aes(color = sc), size = 1.5) +
+    scale_color_manual(values = c(cols2[1], "red"), guide = "none") +
+    labs(title = paste0("Locations of monitored plants inside (red) and ",
+                        "outside (green) the Southcentral region (shaded gray)")) +
+    theme(panel.background = element_rect(fill = rgb(t(col2rgb("lightblue")), 
+                                                     alpha = 0.2 * 255, 
+                                                     maxColorValue = 255)),
+          plot.title = element_text(family = "Arial", size = 11))
+  # spp_map
+
+  # Summarize how much data is available, by year and across years
+  # (focus on weeks 10-40)
+  spp_nobs <- sppdat %>%
+    group_by(year) %>%
+    summarize(nplants = length(unique(plant_id)),
+              nplants_sc = length(unique(plant_id[sc == 1]))) %>%
+    data.frame()
+  spp_nobsperwk <- sppdat %>%
+    filter(wk %in% 10:40) %>%
+    group_by(year, wk) %>%
+    summarize(nobs_open = n(), 
+              nobs_open_sc = length(year[sc == 1]),
+              .groups = "keep") %>%
+    group_by(year) %>%
+    summarize(nobs_weeklymn = mean(nobs_open),
+              nobs_weeklymn_sc = mean(nobs_open_sc)) %>%
+    data.frame()
+  spp_nobs <- spp_nobs %>%
+    left_join(spp_nobsperwk, by = "year")
+  
+  nobs_open <- sppdat %>%
+    filter(wk %in% 10:40) %>%
+    group_by(wk) %>%
+    summarize(nobs_open = n(),
+              nobs_open_sc = length(wk[sc == 1])) %>%
+    data.frame()
+  
+  overall <- data.frame(
+    year = "all",
+    nplants = length(unique(sppdat$plant_id)),
+    nplants_sc = length(unique(sppdat$plant_id[sppdat$sc == 1])),
+    nobs_weeklymn = mean(nobs_open$nobs_open),
+    nobs_weeklymn_sc = mean(nobs_open$nobs_open_sc))
+  
+  nobs_tab <- rbind(spp_nobs, overall) %>%
+    mutate(across(contains("weekly"),  \(x) round(x, 1))) %>%
+    relocate(nobs_weeklymn, .after = nplants) %>%
+    mutate(year = ifelse(year == "all", "All years", year))
+
+  # Put summary stats in a flextable so it can be combined with ggplot objects
+  flext <- flextable(nobs_tab) %>%
+    add_header_row(
+      top = TRUE,
+      values = c("", 
+                 "Continental US",
+                 "",
+                 "Southcentral region",
+                 "")) %>%
+    set_header_labels(
+      year = "Year",
+      nplants = "No. plants", 
+      nobs_weeklymn = "Mean no. obs/wk",
+      nplants_sc = "No. plants", 
+      nobs_weeklymn_sc = "Mean no. obs/wk") %>%
+    merge_at(i = 1, j = 2:3, part = "header") %>%
+    merge_at(i = 1, j = 4:5, part = "header") %>%
+    flextable::width(j = c(1, 2, 4), width = 1.2) %>%
+    flextable::width(j = c(3, 5), width = 1.5) %>%
+    flextable::align(align = "center", j = 2:5, part = "all") %>%
+    hline(i = nrow(nobs_tab) - 1) %>%
+    add_header_lines(
+      values = paste0("Number of plants and the mean number of open flower ",
+                      "observations made each week (in weeks 10-40) for all ",
+                      "plants in the Continental US and for plants in the ",
+                      "Southcentral region.")) %>%
+    hline_top(border = fp_border_default(width = 0), part = "header") 
+  # flext
+
+  # Set threshold for mean number of plants observed each week in weeks 10-40
+  weekly_nobs_min <- 8
+  
+  # Print message about data available for this species
+  sppyears <- nobs_tab %>% 
+    filter(nobs_weeklymn_sc >= weekly_nobs_min)
+  if (nrow(sppyears) == 0) {
+    warning("Data are insufficient to characterize open flower phenophase for ", 
+            spp)
+    # Add a next here, so we skip the rest of the species loop
+  } else{
+    if (nrow(sppyears) == 1) {
+      message("Can only characterize open flower phenophase for ", spp, 
+              " by combining data across all years")
+    } else {
+      message("Data are sufficient to characterize open flower phenophase for " ,
+              spp, " in ", paste(sppyears$year[-nrow(sppyears)], collapse = ", "))
+    }
+  }
+
+  # Format data for figures with weekly proportion of open flowers, all years 
+  # combined
+  prop_allyrs <- sppdat %>%
+    group_by(sc, wk, wk_date1, wk_doy1, wk_date4, wk_doy4) %>%
+    summarize(n_obs = n(),
+              n_open = sum(status_fo),
+              .groups = "keep") %>%
+    data.frame() %>%
+    mutate(prop_open = n_open / n_obs) %>%
+    mutate(sc_f = as.factor(ifelse(sc == 0, "Other", "SC")))
+  
+  # To create figures with ticks between month labels on the x axis, need to do 
+  # a little extra work. 
+    # Dates where we want month labels (15th of month)
+    x_lab <- as.Date(paste0("2024-", 1:12, "-15"))
+    # Dates where we want ticks (1st of month)
+    x_tick <- as.Date(c(paste0("2024-", 1:12, "-01"), "2025-01-01"))
+    n_x_tick <- length(x_tick)
+    # Will specify axis breaks & ticks at 1st and 15th of month. Make labels on
+    # the 1st black and change color of tick marks on the 15th to NA.
+
+  # Create figure comparing weekly proportion of plants with open flowers inside
+  # and outside of the SC region (to see whether it's reasonable to use data 
+  # from plants across the US in state info sheets)
+  prop_plot <- ggplot(data = prop_allyrs,
+                      aes(x = wk_date4, y = prop_open, group = sc_f)) + 
+    geom_point(aes(color = sc_f, size = n_obs), alpha = alphaline) +
+    geom_line(aes(color = sc_f), alpha = alphaline) +
+    scale_color_whitebox_d(palette = whitebox_palette) +
+    scale_x_continuous(breaks = c(x_lab, x_tick),
+                       labels = c(month.abb, rep("", n_x_tick))) +
+    labs(y = paste0("Proportion of plants with open flowers")) +
+    labs(color = "Region", size = "No. obs") +
+    theme(text = element_text(size = 10),
+          legend.text = element_text(size = 8),
+          axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                                rep("black", n_x_tick))),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.major.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                                      rep("white", n_x_tick))),
+          panel.background = element_rect(fill = "gray95"),
+          axis.title.x = element_blank())
+  # prop_plot  
+
+  # Extracting proportion based on plants in SC region only (combining
+  # data across years)
+  propSC_allyrs <- prop_allyrs %>%
+    filter(sc == 1)
+  
+  # Use a GAM to model weekly proportions. (Note that we're using an iterative
+  # process to select the smoothing parameter [k]. Seems that if k is set
+  # pretty high, then sometimes you can get a very wide credible interval around
+  # predictions during a portion of hte year when the curve is flat [ie, no 
+  # plants flowering]. Seems reasonable to start by setting k somewhat low and
+  # then checking to see if model fit is adequate. If not, can increase k)
+  k_values <- seq(5, 20, by = 5)
+  
+  for (k_index in 1:4) {
+    gam1 <- gam(prop_open ~ s(wk_doy4, bs = "cc", k = k_values[k_index]), weights = n_obs,
+                data = propSC_allyrs, method = "REML", family = "binomial")
+    k_p <- k.check(gam1)[,"p-value"] 
+    if(k_p > 0.1) break()
+  }
+  if (k_p <= 0.1 & k_index == 4) {
+    warning("k value of 20 still results in poor model fit.")
+  } 
+  message("k set at ", k_values[k_index], " for ", spp)
+
+  # Make GAM predictions
+  gam1_preds <- data.frame(
+    wk_doy4 = min(propSC_allyrs$wk_doy4):max(propSC_allyrs$wk_doy4),
+    wk_date4 = as.Date(min(propSC_allyrs$wk_date4):max(propSC_allyrs$wk_date4)))
+  gam1_preds <- cbind(gam1_preds,
+                      as.data.frame(predict(gam1,
+                                            newdata = gam1_preds,
+                                            type = "link",
+                                            se.fit = TRUE))) %>%
+    rename(fitl = fit) %>%
+    mutate(lcll = fitl - 1.96 * se.fit,
+           ucll = fitl + 1.96 * se.fit,
+           fit = exp(fitl) / (1 + exp(fitl)),
+           lcl = exp(lcll) / (1 + exp(lcll)),
+           ucl = exp(ucll) / (1 + exp(ucll))) %>%
+    select(-c(lcll, ucll))
+
+  # Create figure with GAM predictions on top of raw weekly proportions
+  gam1_plot <- ggplot(data = propSC_allyrs, 
+                      aes(x = wk_date4, y = prop_open)) + 
+    geom_point(aes(size = n_obs), alpha = alphaline, color = cols2[2]) +
+    geom_line(alpha = alphaline, color = cols2[2]) +
+    geom_ribbon(data = gam1_preds, 
+                aes(x = wk_date4, y = fit, ymin = lcl, ymax = ucl), 
+                color = "gray", alpha = alphapoly, linetype = 0) +
+    geom_line(data = gam1_preds, aes(x = wk_date4, y = fit)) +
+    scale_x_continuous(breaks = c(x_lab, x_tick),
+                       labels = c(month.abb, rep("", n_x_tick))) +
+    labs(y = paste0("Proportion of plants with open flowers"), 
+         size = "No. obs") +
+    theme(text = element_text(size = 10),
+          legend.text = element_text(size = 8),
+          axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                                rep("black", n_x_tick))),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.major.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                                      rep("white", n_x_tick))),
+          panel.background = element_rect(fill = "gray95"),
+          axis.title.x = element_blank())
+  # gam1_plot
+  
+  # Create a "heat map" with raw weekly proportions. Adding a 2nd panel below
+  # with weekly sample sizes (and the preset threshold identified with a dashed
+  # line)
+  propSC_allyrs <- propSC_allyrs %>%
+    mutate(tile_ht = 0.5)
+
+  g1 <- ggplot(propSC_allyrs) +
+    geom_tile(aes(x = wk_date4, y = tile_ht, fill = prop_open)) +
+    scale_fill_gradient(low = "gray95", high = cols2[2], 
+                        name = "Proportion \nopen", 
+                        guide = guide_colorbar(position = "inside")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_continuous(breaks = c(x_lab, x_tick),
+                       labels = c(month.abb, rep("", n_x_tick)),
+                       expand = c(0.01, 0.01)) +
+    theme(axis.title = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.line.y.right = element_line(color = "black"),
+          axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                                rep("black", n_x_tick))),
+          panel.background = element_rect(fill = "white"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          text = element_text(size = 10),
+          legend.title = element_text(size = 9),
+          legend.text = element_text(size = 8),
+          legend.position.inside = c(-0.05, 0.5),
+          plot.margin = unit(c(5.5, 5.5, 5.5, 30), "pt"),
+          legend.margin = margin(c(5, 0, 5, 0)))
+  g2 <- ggplot(propSC_allyrs) +
+    geom_col(aes(x = wk_date4, y = n_obs), fill = "gray70") +
+    geom_hline(yintercept = weekly_nobs_min, 
+               linetype = "dashed", color = "black") +
+    labs(y = "No. observations") +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_continuous(breaks = c(x_lab, x_tick),
+                       labels = c(month.abb, rep("", n_x_tick)),
+                       expand = c(0.01, 0.01)) +
+    theme(axis.line = element_line(color = "black"),
+          axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
+                                                rep("black", n_x_tick))),
+          axis.title.x = element_blank(),
+          panel.background = element_rect(fill = "white"),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          text = element_text(size = 10),
+          plot.margin = unit(c(5.5, 5.5, 5.5, 30), "pt"))
+  heatmap2 <- plot_grid(g1, g2, nrow = 2, rel_heights = c(2, 1), align = "v")
+  # heatmap2
+
+  # Create ggplot object with title for pdf summary pages
+  title <- ggdraw() + 
+    draw_label(species_titles[i], fontface = "bold", x = 0, hjust = 0) +
+    theme(plot.margin = margin(0, 0, 0, 7))
+  title_pdf <- plot_grid(NULL, title, NULL, nrow = 1, 
+                         rel_widths = c(0.5, 7.5, 0.5))
+  
+  # Combine table and map into a single pdf
+  flext_pdf <- gen_grob(flext, fit = "fixed", just = "center")
+  map_pdf <- plot_grid(NULL, spp_map, NULL, nrow = 1, 
+                       rel_widths = c(0.5, 7.5, 0.5))
+  titletablemap <- plot_grid(NULL, title_pdf, flext_pdf, map_pdf, NULL,
+                             ncol = 1, 
+                             rel_heights = c(0.1, 0.5, 4.5, 4.5, 0.5))
+  pdf1_name <- paste0("output/weekly-open-flower-prop/", 
+                     nice_names[i], 
+                     "-tablemap.pdf")
+  ggsave(pdf1_name, 
+         width = pdfw, 
+         height = pdfh, 
+         units = "in", 
+         device = cairo_pdf)
+  # Message that pdf was saved
+  message("PDF with summary table and map for ", spp, " saved to output folder")
+  
+  # Combine figures with weekly proportions into a single pdf
+  prop_pdf <- plot_grid(NULL, prop_plot, NULL, nrow = 1, 
+                        rel_widths = c(0.5, 7.5, 0.5))
+  gam1_pdf <- plot_grid(NULL, gam1_plot, NULL, nrow = 1, 
+                        rel_widths = c(0.5, 7.5, 0.5))
+  heatmap2_pdf <- plot_grid(NULL, heatmap2, NULL, nrow = 1, 
+                            rel_widths = c(0.5, 7.5, 0.5))
+  all_figs <- plot_grid(prop_pdf, gam1_pdf, heatmap2_pdf,
+                        ncol = 1, rel_heights = c(3, 3, 3), align = "v")
+  titlefigures <- plot_grid(NULL, title_pdf, all_figs, NULL,
+                             ncol = 1, 
+                             rel_heights = c(0.1, 0.5, 9, 0.5))
+  pdf2_name <- paste0("output/weekly-open-flower-prop/", 
+                      nice_names[i], 
+                      "-figs.pdf")
+  ggsave(pdf2_name, 
+         width = pdfw, 
+         height = pdfh, 
+         units = "in", 
+         device = cairo_pdf)
+  # Message that pdf was saved
+  message("PDF with weekly proportion figures for ", spp, 
+          " saved to output folder")
+
+}
+
+# TODO: 
+# Change pdf names so table is first (better way to combine things so we
+# can flip through things quickly?)
+# Sort out message/warning options
+# k value of 20 still results in poor model fit for 1 species -- need to figure which one
+# "Data insufficient to characterize OF phenophase for trumpet honeysuckle, broadleaf milkweed
