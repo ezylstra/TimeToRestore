@@ -3,7 +3,7 @@
 # visualize weekly proportion of plants with open flowers
 
 # Erin Zylstra
-# 2024-07-10
+# 2024-07-11
 ################################################################################
 
 require(dplyr)
@@ -16,6 +16,8 @@ require(cowplot)
 require(terra)
 require(tidyterra)
 require(mgcv)
+require(pdftools)
+set_null_device(cairo_pdf) # To avoid some warnings about fonts
 
 rm(list = ls())
 
@@ -198,8 +200,44 @@ for (i in 1:length(common_names)) {
     mutate(across(contains("weekly"),  \(x) round(x, 1))) %>%
     relocate(nobs_weeklymn, .after = nplants) %>%
     mutate(year = ifelse(year == "all", "All years", year))
+  
+  # Set threshold for mean number of plants observed each week in weeks 10-40
+  weekly_nobs_min <- 8
+  
+  # Print message about data available for this species
+  sppyears <- nobs_tab %>% 
+    filter(nobs_weeklymn_sc >= weekly_nobs_min)
+  if (nrow(sppyears) == 0) {
+    sample_size_warning <- paste0("Data are very limited for ", spp, 
+                                  ". Mean number of observations per week ",
+                                  "(combining data across years) < ", 
+                                  weekly_nobs_min, ".")
+    warning(sample_size_warning)
+  } else{
+    if (nrow(sppyears) == 1) {
+      message("Can only characterize open flower phenophase for ", spp, 
+              " by combining data across all years.")
+    } else {
+      message("Data are sufficient to characterize open flower phenophase for ",
+              spp, " in ", paste(sppyears$year[-nrow(sppyears)], 
+                                 collapse = ", "))
+    }
+  }
 
   # Put summary stats in a flextable so it can be combined with ggplot objects
+  caption <- paste0("Number of plants and the mean number of open flower ",
+                    "observations made each week (in weeks 10-40) for all ",
+                    "plants in the Continental US and for plants in the ",
+                    "Southcentral region.")
+  if (exists("sample_size_warning")) {
+    caption <- as_paragraph(
+      as_chunk(caption), "\n", 
+      as_chunk(paste0("Note: ", sample_size_warning), 
+               fp_text_default(bold = TRUE, color = "red"))
+    )
+    rm(sample_size_warning)
+  }
+  
   flext <- flextable(nobs_tab) %>%
     add_header_row(
       top = TRUE,
@@ -220,33 +258,9 @@ for (i in 1:length(common_names)) {
     flextable::width(j = c(3, 5), width = 1.5) %>%
     flextable::align(align = "center", j = 2:5, part = "all") %>%
     hline(i = nrow(nobs_tab) - 1) %>%
-    add_header_lines(
-      values = paste0("Number of plants and the mean number of open flower ",
-                      "observations made each week (in weeks 10-40) for all ",
-                      "plants in the Continental US and for plants in the ",
-                      "Southcentral region.")) %>%
-    hline_top(border = fp_border_default(width = 0), part = "header") 
+    add_header_lines(values = caption) %>%
+    hline_top(border = fp_border_default(width = 0), part = "header")
   # flext
-
-  # Set threshold for mean number of plants observed each week in weeks 10-40
-  weekly_nobs_min <- 8
-  
-  # Print message about data available for this species
-  sppyears <- nobs_tab %>% 
-    filter(nobs_weeklymn_sc >= weekly_nobs_min)
-  if (nrow(sppyears) == 0) {
-    warning("Data are insufficient to characterize open flower phenophase for ", 
-            spp)
-    # Add a next here, so we skip the rest of the species loop
-  } else{
-    if (nrow(sppyears) == 1) {
-      message("Can only characterize open flower phenophase for ", spp, 
-              " by combining data across all years")
-    } else {
-      message("Data are sufficient to characterize open flower phenophase for " ,
-              spp, " in ", paste(sppyears$year[-nrow(sppyears)], collapse = ", "))
-    }
-  }
 
   # Format data for figures with weekly proportion of open flowers, all years 
   # combined
@@ -303,18 +317,23 @@ for (i in 1:length(common_names)) {
   # predictions during a portion of hte year when the curve is flat [ie, no 
   # plants flowering]. Seems reasonable to start by setting k somewhat low and
   # then checking to see if model fit is adequate. If not, can increase k)
-  k_values <- seq(5, 20, by = 5)
+  k_values <- seq(5, 50, by = 5)
   
-  for (k_index in 1:4) {
+  for (k_index in 1:length(k_values)) {
     gam1 <- gam(prop_open ~ s(wk_doy4, bs = "cc", k = k_values[k_index]), weights = n_obs,
                 data = propSC_allyrs, method = "REML", family = "binomial")
     k_p <- k.check(gam1)[,"p-value"] 
     if(k_p > 0.1) break()
   }
-  if (k_p <= 0.1 & k_index == 4) {
-    warning("k value of 20 still results in poor model fit.")
-  } 
-  message("k set at ", k_values[k_index], " for ", spp)
+  k <- k_values[k_index]
+
+  k_message1 <- paste0("Smoothing parameter (k) = ", k, ".") 
+  if (k_p <= 0.1 & k_index == length(k_values)) {
+    k_message2 <- "Despite a large k value, still indications of poor model fit."
+    message(k_message1, " ", k_message2)
+  } else {
+    message(k_message1)
+  }
 
   # Make GAM predictions
   gam1_preds <- data.frame(
@@ -345,7 +364,8 @@ for (i in 1:length(common_names)) {
     scale_x_continuous(breaks = c(x_lab, x_tick),
                        labels = c(month.abb, rep("", n_x_tick))) +
     labs(y = paste0("Proportion of plants with open flowers"), 
-         size = "No. obs") +
+         size = "No. obs", 
+         title = k_message1) +
     theme(text = element_text(size = 10),
           legend.text = element_text(size = 8),
           axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1), 
@@ -354,7 +374,14 @@ for (i in 1:length(common_names)) {
           panel.grid.major.x = element_line(color = c(rep(NA, n_x_tick - 1), 
                                                       rep("white", n_x_tick))),
           panel.background = element_rect(fill = "gray95"),
-          axis.title.x = element_blank())
+          axis.title.x = element_blank(),
+          plot.title = element_text(size = 8))
+  if (exists("k_message2")) {
+    gam1_plot <- gam1_plot +
+      labs(subtitle = k_message2) +
+      theme(plot.subtitle = element_text(size = 8, face = "bold", color = "red"))
+    rm(k_message2)
+  }
   # gam1_plot
   
   # Create a "heat map" with raw weekly proportions. Adding a 2nd panel below
@@ -366,6 +393,7 @@ for (i in 1:length(common_names)) {
   g1 <- ggplot(propSC_allyrs) +
     geom_tile(aes(x = wk_date4, y = tile_ht, fill = prop_open)) +
     scale_fill_gradient(low = "gray95", high = cols2[2], 
+                        na.value = "white",
                         name = "Proportion \nopen", 
                         guide = guide_colorbar(position = "inside")) +
     scale_y_continuous(expand = c(0, 0)) +
@@ -388,7 +416,7 @@ for (i in 1:length(common_names)) {
           plot.margin = unit(c(5.5, 5.5, 5.5, 30), "pt"),
           legend.margin = margin(c(5, 0, 5, 0)))
   g2 <- ggplot(propSC_allyrs) +
-    geom_col(aes(x = wk_date4, y = n_obs), fill = "gray70") +
+    geom_col(aes(x = wk_date4, y = n_obs), width = 5, fill = "gray70") +
     geom_hline(yintercept = weekly_nobs_min, 
                linetype = "dashed", color = "black") +
     labs(y = "No. observations") +
@@ -430,9 +458,7 @@ for (i in 1:length(common_names)) {
          height = pdfh, 
          units = "in", 
          device = cairo_pdf)
-  # Message that pdf was saved
-  message("PDF with summary table and map for ", spp, " saved to output folder")
-  
+
   # Combine figures with weekly proportions into a single pdf
   prop_pdf <- plot_grid(NULL, prop_plot, NULL, nrow = 1, 
                         rel_widths = c(0.5, 7.5, 0.5))
@@ -440,8 +466,8 @@ for (i in 1:length(common_names)) {
                         rel_widths = c(0.5, 7.5, 0.5))
   heatmap2_pdf <- plot_grid(NULL, heatmap2, NULL, nrow = 1, 
                             rel_widths = c(0.5, 7.5, 0.5))
-  all_figs <- plot_grid(prop_pdf, gam1_pdf, heatmap2_pdf,
-                        ncol = 1, rel_heights = c(3, 3, 3), align = "v")
+  all_figs <- plot_grid(prop_pdf, NULL, gam1_pdf, NULL, heatmap2_pdf,
+                        ncol = 1, rel_heights = c(2.8, 0.2, 3, 0.2, 2.8), align = "v")
   titlefigures <- plot_grid(NULL, title_pdf, all_figs, NULL,
                              ncol = 1, 
                              rel_heights = c(0.1, 0.5, 9, 0.5))
@@ -453,15 +479,14 @@ for (i in 1:length(common_names)) {
          height = pdfh, 
          units = "in", 
          device = cairo_pdf)
-  # Message that pdf was saved
-  message("PDF with weekly proportion figures for ", spp, 
-          " saved to output folder")
 
+  # Combine two pages into a single pdf and remove the 1-pagers
+  pdf_name <- paste0("output/weekly-open-flower-prop/", 
+                     nice_names[i], ".pdf")
+  invisible(pdf_combine(c(pdf1_name, pdf2_name), output = pdf_name))
+  file.remove(pdf1_name)
+  file.remove(pdf2_name)
+  message("PDF with summary of open flower data (weekly proportions) for ", spp, 
+          " saved to output folder")
 }
 
-# TODO: 
-# Change pdf names so table is first (better way to combine things so we
-# can flip through things quickly?)
-# Sort out message/warning options
-# k value of 20 still results in poor model fit for 1 species -- need to figure which one
-# "Data insufficient to characterize OF phenophase for trumpet honeysuckle, broadleaf milkweed
