@@ -3,7 +3,7 @@
 # visualize weekly proportion of plants with open flowers
 
 # Erin Zylstra
-# 2024-07-11
+# 2024-07-12
 ################################################################################
 
 require(dplyr)
@@ -33,36 +33,6 @@ rm(list = ls())
   # See: https://dieghernan.github.io/tidyterra/reference/scale_whitebox.html
   cols2 <- whitebox.colors(n = 2, palette = whitebox_palette)
 
-# Load csv with sample sizes for weekly proportion of plants with open flowers #
-  
-  ofss <- read.csv("data/openflower_weeklyobs_samplesizes.csv")
-
-# Identify priority species with sufficient data ------------------------------#
-  
-  # Selecting priority species for that average 6 or more observations in the
-  # southcentral region per week (for all years combined)
-  species <- ofss %>%
-    filter(mn_wkobs_sc >= 6) %>%
-    select(!contains("z789"))
-  
-  # List of common names
-  common_names <- species$common_name
-  
-  # List of common names with underscores for filenames
-  nice_names <- str_replace(common_names, " ", "_")
-  
-  spp_states <- species %>%
-    select(LA, NM, OK, TX) %>%
-    mutate(LA = ifelse(LA == 1, "LA", NA), 
-           NM = ifelse(NM == 1, "NM", NA),
-           OK = ifelse(OK == 1, "OK", NA),
-           TX = ifelse(TX == 1, "TX", NA)) %>%
-    unite("states", LA:TX, sep = ", ", na.rm = TRUE)
-  
-  # List of species, with priority info, for titles on species summary sheets
-  species_titles <- paste0(str_to_sentence(common_names),
-                           " (priority in ", spp_states$states, ")")
-
 # Load shapefile with state boundaries ----------------------------------------# 
   
   states <- vect("data/states/cb_2017_us_state_500k.shp")
@@ -70,15 +40,11 @@ rm(list = ls())
                    !states$STUSPS %in% c("HI", "AK", "VI", "MP", 
                                          "GU", "PR", "AS"))
   states$sc <- as.factor(ifelse(states$STUSPS %in% c("LA", "NM", "OK", "TX"), 
-                                1, 0))
-
+                                1, 0))  
+  
 # Load processed NPN status/intensity data and format -------------------------#
   
   df <- read.csv("data/flower-status-intensities-priorityspp.csv")
-  
-  # Extract data for species that had sufficient data in SC region
-  df <- df %>%
-    filter(common_name %in% common_names)
   
   # Rename/remove columns where necessary and remove obs with open flower 
   # status = NA
@@ -91,7 +57,7 @@ rm(list = ls())
   
   # Summarize data by plant-year
   samples <- df %>%
-    group_by(common_name, plant_id, site_id, state, year) %>%
+    group_by(common_name, plant_id, site_id, state, zone, year) %>%
     summarize(n_obs = n(),                      # No. of daily observations
               n_status_fl = sum(!is.na(status_fl)),  # No. of flower status obs
               n_status_fo = sum(!is.na(status_fo)),  # No. of open flower status obs
@@ -100,7 +66,21 @@ rm(list = ls())
               .groups = "keep") %>%
     data.frame()
   
-  # Remove any plant year with no open flower status recorded
+  # Add species info to samples dataframe (priority level and for each state, an
+  # indicator of whether that species ever received one vote or more)
+  spp <- read.csv("data/priority-species.csv")
+  spp <- spp %>%
+    mutate(across(starts_with("votes_"), ~ replace_na(., 0))) %>%
+    mutate(across(starts_with("revisit_"), ~ replace_na(., 0))) %>%
+    mutate(LA = if_else(votes_LA > 0 | revisit_votes_LA > 0, 1, 0),
+           NM = if_else(votes_NM > 0 | revisit_votes_NM > 0, 1, 0),
+           OK = if_else(votes_OK > 0 | revisit_votes_OK > 0, 1, 0),
+           TX = if_else(revisit_votes_TX > 0, 1, 0)) %>%
+    select(common_name, priority, LA, NM, OK, TX)
+  samples <- samples %>%
+    left_join(spp, by = "common_name")
+  
+  # Remove any plant-year with no open flower status recorded
   samples <- samples %>% 
     filter(n_status_fo > 0) %>%
     mutate(plant_yr = paste(plant_id, year, sep = "_"))
@@ -108,38 +88,112 @@ rm(list = ls())
     mutate(plant_yr = paste(plant_id, year, sep = "_")) %>%
     filter(plant_yr %in% samples$plant_yr)
   
-  # Add week to data, so we can calculate weekly proportions
-    # We'll be creating wk_doy columns to assign each week with a day of the year.
-    # wk_doy1 = start of each week (eg, date for week 1 would be Jan 1)
-    # wk_doy4 = middle of each week (eg, date for week 1 would be Jan 4)
-    df <- df %>%
-      mutate(wk = week(observation_date)) %>%
-      # Remove observations in week 53
-      filter(wk < 53) %>%
-      # Create wk_doy columns
-      mutate(wk_date1 = parse_date_time(paste(2024, wk, 1, sep = "/"), "Y/W/w"),
-             wk_date1 =  as.Date(wk_date1),
-             wk_doy1 = yday(wk_date1),
-             wk_date4 = parse_date_time(paste(2024, wk, 4, sep = "/"), "Y/W/w"),
-             wk_date4 =  as.Date(wk_date4),
-             wk_doy4 = yday(wk_date4))
+# Add week to data, so we can calculate weekly proportions --------------------#
   
-  # Just keep one observation of each plant, each week. Sort so the most
+  # We'll also create wk_doy columns to assign each week with a day of the year:
+  # wk_doy1 = start of each week (eg, date for week 1 would be Jan 1)
+  # wk_doy4 = middle of each week (eg, date for week 1 would be Jan 4)
+  df <- df %>%
+    mutate(wk = week(observation_date)) %>%
+    # Remove observations in week 53
+    filter(wk < 53) %>%
+    # Create wk_doy columns
+    mutate(wk_date1 = parse_date_time(paste(2024, wk, 1, sep = "/"), "Y/W/w"),
+           wk_date1 =  as.Date(wk_date1),
+           wk_doy1 = yday(wk_date1),
+           wk_date4 = parse_date_time(paste(2024, wk, 4, sep = "/"), "Y/W/w"),
+           wk_date4 =  as.Date(wk_date4),
+           wk_doy4 = yday(wk_date4))
+  
+  # Keep just one observation of each plant, each week. Sort so the most
   # advanced phenophase gets kept (if more than one value in a week)
   df1 <- df %>%
     arrange(common_name, plant_id, year, wk, 
             desc(status_fl), desc(status_fo)) %>%
     distinct(plant_id, year, wk, .keep_all = TRUE) %>%
-    # Add an indicator for plants southcentral states
+    # Add an indicator for plants in southcentral states
     mutate(sc = 1 * state %in% c("LA", "NM", "OK", "TX"))
+  
+# Summarize weekly data available, by species ---------------------------------#  
+  
+  # Summarize quantity of data available across all plants, years
+  propdat_wk <- df1 %>%
+    group_by(common_name, wk) %>%
+    summarize(n_obs = n(), .groups = "keep") %>%
+    data.frame()
+  # Calculate mean no. observations used to calculate proportion open in weeks 
+  # 10-40 (~ March - September)
+  propdat <- propdat_wk %>%
+    filter(wk %in% 10:40) %>%
+    group_by(common_name) %>%
+    summarize(mn_wkobs = round(mean(n_obs), 1)) %>%
+    data.frame()
+  
+  # Summarize quantity of data available across plants in SC region, all years
+  propdat_wk_sc <- df1 %>%
+    filter(sc == 1) %>%
+    group_by(common_name, wk) %>%
+    summarize(n_obs_sc = n(), .groups = "keep") %>%
+    data.frame()
+  propdat_sc <- propdat_wk_sc %>%
+    filter(wk %in% 10:40) %>%
+    group_by(common_name) %>%
+    summarize(mn_wkobs_sc = round(mean(n_obs_sc), 1)) %>%
+    data.frame()
+  
+  # Summarize number of plants, plant-years
+  nplants <- df1 %>%
+    group_by(common_name) %>%
+    summarize(n_plants = length(unique(plant_id)),
+              n_plants_sc = length(unique(plant_id[sc == 1])),
+              n_plantyrs = length(unique(plant_yr)),
+              n_plantyrs_sc = length(unique(plant_yr[sc == 1]))) %>%
+    data.frame()
+  
+  # Combine everything
+  propdata <- spp %>%
+    right_join(nplants, by = "common_name") %>%
+    left_join(propdat, by = "common_name") %>%
+    left_join(propdat_sc, by = "common_name") %>%
+    arrange(priority, desc(n_plantyrs_sc))
+  
+  # Look at species summary
+  propdata
+  
+# Identify priority species with sufficient open-flower status data -----------#
+  
+  # Set a very liberal threshold for mean number of plants in the SC region 
+  # observed each week in weeks 10-40. In other words, we'll only move 
+  # forward with species that average X or more plants in the SC region 
+  # observed each week (in weeks 10-40) when combining data across all years.
+  threshold <- 6
+  
+  species <- propdata %>%
+    filter(mn_wkobs_sc >= threshold)
+  
+  # List of common names
+  common_names <- species$common_name
+  
+  # List of common names with underscores for filenames
+  nice_names <- str_replace(common_names, " ", "_")
+  
+  species <- species %>%
+    mutate(LA1 = ifelse(LA == 1, "LA", NA), 
+           NM1 = ifelse(NM == 1, "NM", NA),
+           OK1 = ifelse(OK == 1, "OK", NA),
+           TX1 = ifelse(TX == 1, "TX", NA)) %>%
+    unite("states", LA1:TX1, sep = ", ", na.rm = TRUE)
+  
+  # List of species, with priority info, for titles on species summary sheets
+  species_titles <- paste0(str_to_sentence(common_names),
+                           " (priority in ", species$states, ")")
 
 # Loop through species, creating summary table and figures --------------------#
 
 for (i in 1:length(common_names)) {
 
-  # Extract data for a species
-  spp <- common_names[i]
-  sppdat <- df1 %>% filter(common_name == spp)
+  # Extract data for species
+  sppdat <- df1 %>% filter(common_name == common_names[i])
   
   # Isolate location information
   sppsites <- sppdat %>%
@@ -201,26 +255,27 @@ for (i in 1:length(common_names)) {
     relocate(nobs_weeklymn, .after = nplants) %>%
     mutate(year = ifelse(year == "all", "All years", year))
   
-  # Set threshold for mean number of plants observed each week in weeks 10-40
+  # Create a warning when the mean number of plants observed each week in weeks 
+  # 10-40 is less than the minimum number listed below
   weekly_nobs_min <- 8
   
   # Print message about data available for this species
   sppyears <- nobs_tab %>% 
     filter(nobs_weeklymn_sc >= weekly_nobs_min)
   if (nrow(sppyears) == 0) {
-    sample_size_warning <- paste0("Data are very limited for ", spp, 
+    sample_size_warning <- paste0("Data are very limited for ", common_names[i], 
                                   ". Mean number of observations per week ",
                                   "(combining data across years) < ", 
                                   weekly_nobs_min, ".")
     warning(sample_size_warning)
   } else{
     if (nrow(sppyears) == 1) {
-      message("Can only characterize open flower phenophase for ", spp, 
-              " by combining data across all years.")
+      message("Can only characterize open flower phenophase for ", 
+              common_names[i], " by combining data across all years.")
     } else {
       message("Data are sufficient to characterize open flower phenophase for ",
-              spp, " in ", paste(sppyears$year[-nrow(sppyears)], 
-                                 collapse = ", "))
+              common_names[i], " in ", paste(sppyears$year[-nrow(sppyears)], 
+              collapse = ", "))
     }
   }
 
@@ -486,7 +541,11 @@ for (i in 1:length(common_names)) {
   invisible(pdf_combine(c(pdf1_name, pdf2_name), output = pdf_name))
   file.remove(pdf1_name)
   file.remove(pdf2_name)
-  message("PDF with summary of open flower data (weekly proportions) for ", spp, 
-          " saved to output folder")
+  message("PDF with summary of open flower data (weekly proportions) for ", 
+          common_names[i], " saved to output folder")
 }
 
+# If an extraneous pdf was saved to the repo, delete it now:
+if (file.exists("Rplot001.pdf")) {
+  invisible(file.remove("Rplot001.pdf"))
+}
