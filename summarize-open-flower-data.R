@@ -505,7 +505,7 @@ for (i in 1:length(common_names)) {
   titletablemap <- plot_grid(NULL, title_pdf, flext_pdf, map_pdf, NULL,
                              ncol = 1, 
                              rel_heights = c(0.1, 0.5, 4.5, 4.5, 0.5))
-  pdf1_name <- paste0("output/weekly-open-flower-prop/", 
+  pdf1_name <- paste0("output/weekly-open-flower-proportions/", 
                      nice_names[i], 
                      "-tablemap.pdf")
   ggsave(pdf1_name, 
@@ -526,7 +526,7 @@ for (i in 1:length(common_names)) {
   titlefigures <- plot_grid(NULL, title_pdf, all_figs, NULL,
                              ncol = 1, 
                              rel_heights = c(0.1, 0.5, 9, 0.5))
-  pdf2_name <- paste0("output/weekly-open-flower-prop/", 
+  pdf2_name <- paste0("output/weekly-open-flower-proportions/", 
                       nice_names[i], 
                       "-figs.pdf")
   ggsave(pdf2_name, 
@@ -536,7 +536,7 @@ for (i in 1:length(common_names)) {
          device = cairo_pdf)
 
   # Combine two pages into a single pdf and remove the 1-pagers
-  pdf_name <- paste0("output/weekly-open-flower-prop/", 
+  pdf_name <- paste0("output/weekly-open-flower-proportions/", 
                      nice_names[i], ".pdf")
   invisible(pdf_combine(c(pdf1_name, pdf2_name), output = pdf_name))
   file.remove(pdf1_name)
