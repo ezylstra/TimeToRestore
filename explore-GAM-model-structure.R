@@ -1,12 +1,9 @@
 ################################################################################
-# Explore data on open flower phenophase
-
-# Much of code is derived from that originally developed by Alyssa Rosemartin, 
-# Hayley Limes, and Jeff Oliver. 
-# See: https://github.com/alyssarosemartin/time-to-restore
+# OLD: Exploring different GAM models for weekly proportion of plants with open 
+# flowers, and visualizing plant locations relative to USDA growing zones
 
 # Erin Zylstra
-# 2024-06-20
+# 2024-07-12
 ################################################################################
 
 require(dplyr)
@@ -55,49 +52,6 @@ spp <- spp %>%
 samples <- samples %>%
   left_join(spp, by = "common_name")
 
-# Summarize data available on open flower phenophase --------------------------#
-
-# Remove any plant year with no open flower status recorded
-samples <- samples %>% 
-  filter(n_status_fo > 0) %>%
-  mutate(ind_yr = paste(individual_id, year, sep = "_"))
-df <- df %>%
-  mutate(ind_yr = paste(individual_id, year, sep = "_")) %>%
-  filter(ind_yr %in% samples$ind_yr)
-
-# How many plants, plant-years with >=1 open flower status, by species?
-spp_ss <- samples %>%
-  group_by(common_name, priority, LA, NM, OK, TX) %>%
-  summarize(n_plantyrs = n(), 
-            n_plants = length(unique(individual_id)),
-            n_plants_LA = length(unique(individual_id[state == "LA"])),
-            n_plants_NM = length(unique(individual_id[state == "NM"])),
-            n_plants_OK = length(unique(individual_id[state == "OK"])),
-            n_plants_TX = length(unique(individual_id[state == "TX"])),
-            .groups = "keep") %>%
-  arrange(desc(n_plantyrs)) %>%  
-  data.frame()
-# LA
-spp_ss %>% 
-  filter(n_plants_LA > 0) %>%
-  arrange(desc(n_plants_LA))
-# NM
-spp_ss %>% 
-  filter(n_plants_NM > 0) %>%
-  arrange(desc(n_plants_NM))
-# OK
-spp_ss %>% 
-  filter(n_plants_OK > 0) %>%
-  arrange(desc(n_plants_OK))
-# TX
-spp_ss %>% 
-  filter(n_plants_TX > 0) %>%
-  arrange(desc(n_plants_TX))
-
-# Most species with very few monitored plants in the 4 states (and this doesn't
-# take into account whether there was just a single observation of the plant
-# in a year or more). Exception would be red maple in LA (54 plants). 
-
 # Visualize site locations and look at USDA zones -----------------------------#
 
 sites <- df %>%
@@ -116,46 +70,36 @@ states <- subset(states,
                  !states$STUSPS %in% c("HI", "AK", "VI", "MP", "GU", "PR", "AS"))
 
 # Visualize zones (specifying levels so zones appear in logical order)
-# ggplot(zones) + 
-#   geom_spatvector(aes(fill = factor(zone, 
-#                                     levels = paste0(rep(3:12, each = 2), 
-#                                                     rep(c("a", "b"))))), 
-#                   col = NA) +
-#   scale_fill_whitebox_d(palette = "muted", name = "Zone") +
-#   geom_spatvector(data = states, aes(fill = NA)) +
-#   geom_spatvector(data = sitesv, size = 0.3)
+ggplot(zones) +
+  geom_spatvector(aes(fill = factor(zone,
+                                    levels = paste0(rep(3:12, each = 2),
+                                                    rep(c("a", "b"))))),
+                  col = NA) +
+  scale_fill_whitebox_d(palette = "muted", name = "Zone") +
+  geom_spatvector(data = states, aes(fill = NA)) +
+  geom_spatvector(data = sitesv, size = 0.3)
 
 # What if we just used zones 7-9?
-# ggplot(subset(zones, zones$zone %in% c("7a", "7b", "8a", "8b", "9a", "9b"))) + 
-#   geom_spatvector(aes(fill = factor(zone)), col = NA) +
-#   scale_fill_whitebox_d(palette = "muted", name = "Zone") +
-#   geom_spatvector(data = states, aes(fill = NA)) +
-#   geom_spatvector(data = sitesv, size = 0.3)
+ggplot(subset(zones, zones$zone %in% c("7a", "7b", "8a", "8b", "9a", "9b"))) +
+  geom_spatvector(aes(fill = factor(zone)), col = NA) +
+  scale_fill_whitebox_d(palette = "muted", name = "Zone") +
+  geom_spatvector(data = states, aes(fill = NA)) +
+  geom_spatvector(data = sitesv, size = 0.3)
 
 # Likely want to restrict things by latitude (38-deg N?)
 zext38 <- ext(zones)
 zext38[4] <- 38
 zones38 <- crop(zones, zext38)
 
-# ggplot() +
-#   geom_spatvector(data = states, aes(fill = NA)) +
-#   geom_spatvector(data = subset(zones38, 
-#                          zones38$zone %in% c("7a", "7b", "8a", 
-#                                              "8b", "9a", "9b")),
-#                   aes(fill = factor(zone)), col = NA) +
-#   scale_fill_whitebox_d(palette = "muted", name = "Zone") +
-#   geom_spatvector(data = states, aes(fill = NA)) +
-#   geom_spatvector(data = sitesv, size = 0.3)
-
-# Extract zone associated with each site
-e <- terra::intersect(sitesv, zones)
-sites <- as.data.frame(e, geom = "XY") %>%
-  rename(lon = x, lat = y)
-# Add zone info to observation dataframe
-df <- df %>%
-  select(-c(latitude, longitude)) %>%
-  left_join(sites, by = c("site_id", "state")) %>%
-  mutate(zone = str_pad(zone, width = 3, side = "left", pad = 0))
+ggplot() +
+  geom_spatvector(data = states, aes(fill = NA)) +
+  geom_spatvector(data = subset(zones38,
+                         zones38$zone %in% c("7a", "7b", "8a",
+                                             "8b", "9a", "9b")),
+                  aes(fill = factor(zone)), col = NA) +
+  scale_fill_whitebox_d(palette = "muted", name = "Zone") +
+  geom_spatvector(data = states, aes(fill = NA)) +
+  geom_spatvector(data = sitesv, size = 0.3)
 
 # Add week to data, so we can calculate weekly proportions --------------------#
 
@@ -183,8 +127,9 @@ df1 <- df %>%
   distinct(individual_id, year, wk, .keep_all = TRUE) %>%
   # Remove week 53
   filter(wk != 53) %>%
-  mutate(z789 = ifelse(lat <=38 & grepl("7|8|9", zone), 1, 0),
-         sc = 1 * state %in% c("LA", "NM", "OK", "TX"))
+  mutate(z789 = ifelse(latitude <=38 & grepl("7|8|9", zone), 1, 0),
+         sc = 1 * state %in% c("LA", "NM", "OK", "TX")) %>%
+  mutate(ind_yr = paste0(individual_id, "_", year))
 
 # Summarize across all plants, years
 propdat_wk <- df1 %>%
@@ -245,11 +190,6 @@ propdata <- spp %>%
 # Look at data summaries for all plants, plants in 4 southcentral states
 propdata %>% select(!contains("z789"))
 
-# Write to file
-# write.csv(propdata, 
-#           "data/openflower_weeklyobs_samplesizes.csv", 
-#           row.names = FALSE)
-
 # Explore wild bergamot data --------------------------------------------------#
 # Priority 1 species. 107 plants monitored, 207 plant-years.
 
@@ -257,6 +197,8 @@ wb <- df1 %>% filter(common_name == "wild bergamot")
 
 # Where are the plants?
 wb_sites <- wb %>%
+  rename(lat = latitude, 
+         lon = longitude) %>%
   select(site_id, lat, lon, state, zone) %>%
   distinct()
 wb_sitesv <- vect(wb_sites, geom = c("lon", "lat"), crs = "epsg:4269")
@@ -501,6 +443,8 @@ AIC(wb_fo1, wb_foy)
   
   # Look where plants are located
   wb_plants <- wb %>%
+    rename(lat = latitude,
+           lon = longitude) %>%
     select(individual_id, state, site_id, lat, lon, zone) %>%
     distinct() 
   count(wb_plants, grepl("7|8|9", zone))
