@@ -268,7 +268,7 @@ rm(list = ls())
   }
   
   for (j in 1:length(pages)) {
-    pdf_name <- paste0("output/maps/flowering_onset_map_", j, ".pdf")
+    pdf_name <- paste0("output/maps/flowering-onset-map-", j, ".pdf")
     ggsave(filename = pdf_name, 
            plot = pages[[j]],
            width = 8.5, 
@@ -277,9 +277,9 @@ rm(list = ls())
            device = cairo_pdf)
   }
   
-  pdf_name <- "output/maps/flowering_onset_maps.pdf"
+  pdf_name <- "output/maps/flowering-onset-maps.pdf"
   ind_map_pages <- list.files(path = "output/maps/",
-                              pattern = "flowering_onset_map_",
+                              pattern = "flowering-onset-map-",
                               full.names = TRUE)
   invisible(pdf_combine(ind_map_pages, output = pdf_name))
   invisible(file.remove(ind_map_pages))
@@ -346,7 +346,7 @@ rm(list = ls())
   }
   
   for (j in 1:length(pages)) {
-    pdf_name <- paste0("output/maps/open_flower_onset_map_", j, ".pdf")
+    pdf_name <- paste0("output/maps/open-flower-onset-map-", j, ".pdf")
     ggsave(filename = pdf_name, 
            plot = pages[[j]],
            width = 8.5, 
@@ -355,9 +355,9 @@ rm(list = ls())
            device = cairo_pdf)
   }
   
-  pdf_name <- "output/maps/open_flower_onset_maps.pdf"
+  pdf_name <- "output/maps/open-flower-onset-maps.pdf"
   ind_map_pages <- list.files(path = "output/maps/",
-                              pattern = "open_flower_onset_map_",
+                              pattern = "open-flower-onset-map-",
                               full.names = TRUE)
   invisible(pdf_combine(ind_map_pages, output = pdf_name))
   invisible(file.remove(ind_map_pages))
