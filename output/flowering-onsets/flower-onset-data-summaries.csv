@@ -1,0 +1,24 @@
+"phenophase","common_name","n_plantyrs","years","region","n_locs","LA","NM","OK","TX","lat_min","lat_max","lon_min","lon_max","dist_to_SC_km"
+"flower","red maple",1455,"2013-2023","east",366,7,0,0,0,29,48,-123,-67,NA
+"flower","common milkweed",390,"2013-2023","east",104,0,0,0,0,34,48,-104,-69,527
+"flower","black elderberry",282,"2013-2023","west",24,1,0,0,0,32,45,-123,-75,NA
+"flower","butterfly milkweed",114,"2013-2023","east",44,0,0,0,2,27,47,-112,-68,NA
+"flower","wild bergamot",74,"2013-2023","east",34,0,0,0,0,32,47,-111,-69,176
+"flower","eastern purple coneflower",70,"2013-2023","east",36,1,0,0,0,30,47,-112,-71,NA
+"flower","swamp milkweed",55,"2013-2023","east",23,0,0,0,0,30,47,-95,-69,124
+"flower","common buttonbush",45,"2013-2023","east",22,6,0,0,1,29,43,-96,-76,NA
+"flower","rubber rabbitbrush",44,"2013-2023","west",18,0,2,0,0,35,45,-122,-101,NA
+"flower","blackeyed Susan",43,"2017-2023","east",24,0,0,0,0,33,48,-123,-71,128
+"flower","cardinalflower",31,"2013-2023","east",14,0,0,0,0,30,45,-94,-75,124
+"open flower","red maple",2359,"2013-2023","east",404,7,0,0,0,29,48,-123,-68,NA
+"open flower","common milkweed",387,"2013-2023","east",114,0,0,0,0,34,48,-104,-68,527
+"open flower","black elderberry",269,"2013-2023","west",22,1,0,0,0,32,42,-123,-75,NA
+"open flower","butterfly milkweed",136,"2013-2023","east",54,0,0,0,1,27,47,-111,-68,NA
+"open flower","eastern purple coneflower",83,"2013-2023","east",43,1,0,0,0,30,47,-104,-69,NA
+"open flower","wild bergamot",75,"2013-2023","east",36,0,0,0,0,32,47,-111,-71,176
+"open flower","Canada goldenrod",65,"2016-2023","east",2,0,0,0,0,39,45,-79,-72,1345
+"open flower","swamp milkweed",54,"2013-2023","east",23,0,0,0,0,30,47,-96,-69,124
+"open flower","common buttonbush",48,"2013-2023","east",22,5,0,0,3,27,42,-98,-75,NA
+"open flower","blackeyed Susan",47,"2017-2023","east",25,0,0,0,0,34,48,-123,-69,614
+"open flower","rubber rabbitbrush",38,"2013-2023","west",13,0,2,0,0,35,46,-122,-106,NA
+"open flower","cardinalflower",34,"2013-2023","east",18,0,0,0,0,30,45,-112,-75,124

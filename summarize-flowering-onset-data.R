@@ -2,7 +2,7 @@
 # Extract and summarize the amount of data available on flower/open flower onset
 
 # Erin Zylstra
-# 2024-07-17
+# 2024-07-19
 ################################################################################
 
 require(dplyr)
@@ -16,9 +16,11 @@ require(terra)
 require(tidyterra)
 require(pdftools)
 
-rm(list = ls())
-
 # Note: throughout script fl = flower phenophase; fo = open flower phenophase
+
+# Logical indicating whether to replace csv/pdf files if they already exist ---#
+
+  replace <- FALSE
 
 # Set parameters for pdf output -----------------------------------------------#
 
@@ -160,15 +162,17 @@ rm(list = ls())
     }
   }
 
-# Summarize flower/open flower onset data available for each species ----------#
+# Select parameters for data inclusion/exclusion ------------------------------#
   
   # Set the maximum number of days prior to a "yes" that we'll need a "no" in 
   # order to use the observation in onset models
-  daysprior <- 14  
-  
+  daysprior <- 14    
+
   # Set the minimum number of plant-yrs needed to include a species in 
   # phenophase summaries
   min_plantyrs <- 30
+  
+# Summarize flower/open flower onset data available for each species ----------#
   
   # Extract plant-wateryr data for flower onset
   py_fl <- py %>%
@@ -203,7 +207,8 @@ rm(list = ls())
   count(py, phenophase)
   # 2803, 3822 plant-yrs for flowers, open flowers, respectively
   
-  # Summarize data for each species, phenophase
+  # Summarize data for each species and phenophase, keeping only those that 
+  # have at least the minimum number of plant-yrs (min_plantyrs). 
   py_spp <- py %>%
     mutate(loc = paste0(lon, ", ", lat)) %>%
     group_by(phenophase, common_name) %>%
@@ -219,14 +224,12 @@ rm(list = ls())
               n_locs_NM = length(unique(loc[state == "NM"])),
               n_locs_OK = length(unique(loc[state == "OK"])),
               n_locs_TX = length(unique(loc[state == "TX"])),
-              lat_min = min(lat),
-              lat_max = max(lat),
+              lat_min = floor(min(lat)),
+              lat_max = ceiling(max(lat)),
+              lon_min = floor(min(lon)),
+              lon_max = ceiling(max(lon)),
               .groups = "keep") %>%
-    data.frame()
-  
-  # Create a slimmed down version for outputting to pdf, including only species-
-  # phenophase combinations with minimum number of plant-yrs (min_plantyrs)
-  py_spp_pdf <- py_spp %>%
+    data.frame() %>%
     filter(n_plantyrs >= min_plantyrs) %>%
     mutate(prop_west = n_locs_west / n_locs,
            prop_central = n_locs_central / n_locs,
@@ -239,21 +242,59 @@ rm(list = ls())
       prop_west == 0.5 & prop_east == 0.5 ~ "west-east",
       prop_east == 0.5 & prop_central == 0.5 ~ "east-central",
       .default = NA)) %>%
-    mutate(lat_range = paste0(floor(lat_min), "-", ceiling(lat_max))) %>%
     rename(LA = n_locs_LA,
            NM = n_locs_NM,
            OK = n_locs_OK,
            TX = n_locs_TX) %>%
     mutate(years = paste0(yr_min, "-", yr_max)) %>%
     select(phenophase, common_name, n_plantyrs, years, region, n_locs, LA, NM, OK,
-           TX, lat_range)
-  # py_spp_pdf
+           TX, lat_min, lat_max, lon_min, lon_max) %>%
+    arrange(phenophase, desc(n_plantyrs))
   
-  # Create a flextable for flower onset:
+  # If no plants for a given species-phenophase are in the SC region, calculate
+  # the distance (in km) from the nearest plant to the SC region. (Will need to 
+  # reproject polygons & points to CONUS Albers equal-area [ESRI:102003])
+  
+  sc_region <- states_sc <- subset(states, states$sc == 1)
+  sc_region <- aggregate(sc_region)
+  sc_region <- terra::project(sc_region, "ESRI:102003")
+  
+  # Extract plant locations
+  py_locs <- py %>%
+    select(phenophase, common_name, lon, lat) %>%
+    distinct() %>%
+    vect(geom = c("lon", "lat"), crs = "epsg:4326")
+  py_locs <- terra::project(py_locs, "ESRI:102003")
+  
+  py_spp$dist_to_SC_km <- NA
+  for (i in 1:nrow(py_spp)) {
+    if (rowSums(py_spp[i, c("LA", "NM", "OK", "TX")]) > 0) {next}
+    spp_ph_locs <- subset(py_locs, 
+                          py_locs$common_name == py_spp$common_name[i] & 
+                            py_locs$phenophase == py_spp$phenophase[i])
+    dists <- terra::distance(spp_ph_locs, sc_region, unit = "km")
+    py_spp$dist_to_SC_km[i] <- round(min(dists))
+  }
+  
+  # Save this summary of flowering onset data to file
+  csv_file <- "output/flowering-onsets/flower-onset-data-summaries.csv"
+  if (!file.exists(csv_file) | (file.exists(csv_file) & replace == TRUE)) {
+    write.csv(py_spp,
+              file = csv_file,
+              row.names = FALSE)
+  }
+  
+# Create a pdf, summarizing data for flower phenophase ------------------------#
+
   pheno_name <- "flower"
-  py_fl_pdf <- py_spp_pdf %>%
+  fl_pdf_name <- "output/flowering-onsets/flower-onset-data-summaries.pdf"
+  
+  # Create a flextable:
+  py_fl_pdf <- py_spp %>%
     filter(phenophase == pheno_name) %>%
-    select(-phenophase) %>%
+    mutate(lat_range = paste0(lat_min, "-", lat_max)) %>%
+    select(-c(phenophase, lat_min, lat_max, lon_min, 
+              lon_max, dist_to_SC_km)) %>%
     arrange(desc(n_plantyrs))
   
   fl_cap <- paste("Summary of data available to model variation in", pheno_name,
@@ -292,11 +333,133 @@ rm(list = ls())
     hline(i = 2, j = 5:9, border = fp_border_default(), part = "header")
   # fl_flext
   
-  # Create a flextable for open flower onset:
+  # Get common names of species with sufficient data
+  fl_common_names <- py_fl_pdf$common_name
+  
+  # Create map for each species with locations of plants that have one or more
+  # years of flowering onset data. Put ggplot objects in list (fl_ggplots)
+  fl_ggplots <- list()
+  for (i in 1:length(fl_common_names)) {
+    
+    # Extract onset data
+    py_fl_spp <- py %>%
+      filter(common_name == fl_common_names[i]) %>%
+      filter(phenophase == "flower")
+    
+    # Isolate location information
+    fl_sites <- py_fl_spp %>%
+      group_by(lat, lon, state) %>%
+      summarize(n_plantyrs = n(), .groups = "keep") %>%
+      data.frame()
+    fl_sitesv <- vect(fl_sites, geom = c("lon", "lat"), crs = "epsg:4269")
+    
+    # Create map with locations of plants with onset data
+    spp_title <- paste0("Onset, flowering: ", 
+                        str_to_sentence(fl_common_names[i]), 
+                        " (", nrow(py_fl_spp), " plant-years)")
+    spp_fl_map <- ggplot(data = states) +
+      geom_spatvector(aes(fill = sc), color = "gray60") +
+      scale_fill_discrete(type = c("white", "gray95"), guide = "none") +
+      geom_spatvector(data = fl_sitesv, aes(size = n_plantyrs), 
+                      col = "blue", pch = 1) +
+      labs(size = "No. plant-years") +
+      labs(title = spp_title) +
+      theme(panel.background = element_rect(fill = rgb(t(col2rgb("lightblue")), 
+                                                       alpha = 0.2 * 255, 
+                                                       maxColorValue = 255)))
+    fl_ggplots[[i]] <- spp_fl_map
+  }
+  
+  # Create first page of pdf (title and table)
+  fl_title <- ggdraw() + 
+    draw_label("Onset of flower phenophase", 
+               fontface = "bold", x = 0, hjust = 0) +
+    theme(plot.margin = margin(0, 0, 0, 7))
+  fl_title_pdf <- plot_grid(NULL, fl_title, NULL, nrow = 1, 
+                            rel_widths = c(0.5, pdfw - 1, 0.5))
+  
+  fl_flext_aspect <- flextable_dim(fl_flext)$aspect_ratio
+  fl_flext_h <- fl_flext_aspect * (pdfw - 1)
+  fl_flext_grob <- gen_grob(fl_flext, fit = "auto", just = "center")
+  fl_flext_pdf <- plot_grid(NULL, fl_flext_grob, NULL, 
+                            nrow = 1, 
+                            rel_widths = c(0.5, pdfw - 1, 0.5))
+  page1_fl <- plot_grid(NULL, fl_title_pdf, fl_flext_pdf, NULL,
+                        ncol = 1, 
+                        rel_heights = c(0.1, 0.5, fl_flext_h, 
+                                        pdfh - (fl_flext_h + 0.6)))
+  page1_fl_filename <- "output/flowering-onsets/flower-onset-page1.pdf"
+  
+  if (!file.exists(fl_pdf_name) | (file.exists(fl_pdf_name) & replace == TRUE)) {
+    ggsave(filename = page1_fl_filename,
+           plot = page1_fl,
+           width = pdfw,
+           height = pdfh,
+           units = "in",
+           device = cairo_pdf)
+  }
+    
+  # Pages to follow with species maps
+  pages <- list()
+  for (j in 1:ceiling(length(fl_ggplots) / 3)) {
+    
+    i <- (j - 1) * 3 + 1
+    
+    plot1 <- plot_grid(NULL, fl_ggplots[[i]], NULL, nrow = 1,
+                       rel_widths = c(0.5, 7.5, 0.5))
+    
+    if (i + 1 > length(fl_ggplots)) {
+      plot2 <- NULL
+    } else {
+      plot2 <- plot_grid(NULL, fl_ggplots[[i + 1]], NULL, nrow = 1,
+                         rel_widths = c(0.5, 7.5, 0.5))
+    }
+    
+    if (i + 2 > length(fl_ggplots)) {
+      plot3 <- NULL
+    } else {
+      plot3 <- plot_grid(NULL, fl_ggplots[[i + 2]], NULL, nrow = 1,
+                         rel_widths = c(0.5, 7.5, 0.5))
+    }
+    
+    pages[[j]] <- plot_grid(NULL, plot1, NULL, plot2, NULL, plot3, NULL,
+                            ncol = 1, 
+                            rel_heights = c(0.6, 3.2, 0.1, 3.2, 0.1, 3.2, 0.6), 
+                            align = "v")
+  }
+  
+  if (!file.exists(fl_pdf_name) | (file.exists(fl_pdf_name) & replace == TRUE)) {
+    
+    for (j in 1:length(pages)) {
+      pdf_name <- paste0("output/flowering-onsets/flower-onset-map-", j, ".pdf")
+      ggsave(filename = pdf_name, 
+             plot = pages[[j]],
+             width = pdfw, 
+             height = pdfh, 
+             units = "in", 
+             device = cairo_pdf)
+    }
+
+    # Combine all pages and remove the individual pdfs
+    ind_map_pages <- list.files(path = "output/flowering-onsets/",
+                                pattern = "flower-onset-map-",
+                                full.names = TRUE)
+    invisible(pdf_combine(c(page1_fl_filename, ind_map_pages), 
+                          output = fl_pdf_name))
+    invisible(file.remove(c(page1_fl_filename, ind_map_pages)))
+  }
+  
+# Create a pdf, summarizing data for open flower phenophase -------------------#
+  
   pheno_name <- "open flower"
-  py_fo_pdf <- py_spp_pdf %>%
+  fo_pdf_name <- "output/flowering-onsets/open-flower-onset-data-summaries.pdf"
+  
+  # Create a flextable:
+  py_fo_pdf <- py_spp %>%
     filter(phenophase == pheno_name) %>%
-    select(-phenophase) %>%
+    mutate(lat_range = paste0(lat_min, "-", lat_max)) %>%
+    select(-c(phenophase, lat_min, lat_max, lon_min, 
+              lon_max, dist_to_SC_km)) %>%
     arrange(desc(n_plantyrs))
   
   fo_cap <- paste("Summary of data available to model variation in", pheno_name,
@@ -336,42 +499,7 @@ rm(list = ls())
   # fo_flext 
 
   # Get common names of species with sufficient data
-  fl_common_names <- py_fl_pdf$common_name
   fo_common_names <- py_fo_pdf$common_name
-  
-  # Create map for each species with locations of plants that have one or more
-  # years of flowering onset data. Put ggplot objects in list (fl_ggplots)
-  fl_ggplots <- list()
-  for (i in 1:length(fl_common_names)) {
-    
-    # Extract onset data
-    py_fl_spp <- py %>%
-      filter(common_name == fl_common_names[i]) %>%
-      filter(phenophase == "flower")
-    
-    # Isolate location information
-    fl_sites <- py_fl_spp %>%
-      group_by(lat, lon, state) %>%
-      summarize(n_plantyrs = n(), .groups = "keep") %>%
-      data.frame()
-    fl_sitesv <- vect(fl_sites, geom = c("lon", "lat"), crs = "epsg:4269")
-    
-    # Create map with locations of plants with onset data
-    spp_title <- paste0("Onset, flowering: ", 
-                        str_to_sentence(fl_common_names[i]), 
-                        " (", nrow(py_fl_spp), " plant-years)")
-    spp_fl_map <- ggplot(data = states) +
-      geom_spatvector(aes(fill = sc), color = "gray60") +
-      scale_fill_discrete(type = c("white", "gray95"), guide = "none") +
-      geom_spatvector(data = fl_sitesv, aes(size = n_plantyrs), 
-                      col = "blue", pch = 1) +
-      labs(size = "No. plant-years") +
-      labs(title = spp_title) +
-      theme(panel.background = element_rect(fill = rgb(t(col2rgb("lightblue")), 
-                                                       alpha = 0.2 * 255, 
-                                                       maxColorValue = 255)))
-    fl_ggplots[[i]] <- spp_fl_map
-  }
   
   # Create map for each species with locations of plants that have one or more
   # years of open flower onset data. Put ggplot objects in list (fo_ggplots)
@@ -406,135 +534,67 @@ rm(list = ls())
                                                        maxColorValue = 255)))
     fo_ggplots[[i]] <- spp_fo_map
   }
+
+  # Create first page of pdf (title and table)  
+  fo_title <- ggdraw() + 
+    draw_label("Onset of open flower phenophase", 
+               fontface = "bold", x = 0, hjust = 0) +
+    theme(plot.margin = margin(0, 0, 0, 7))
+  fo_title_pdf <- plot_grid(NULL, fo_title, NULL, nrow = 1, 
+                            rel_widths = c(0.5, pdfw - 1, 0.5))
   
-  # Create pdf with flower onset summaries
-    # First page, with title and table
-    fl_title <- ggdraw() + 
-      draw_label("Onset of flower phenophase", 
-                 fontface = "bold", x = 0, hjust = 0) +
-      theme(plot.margin = margin(0, 0, 0, 7))
-    fl_title_pdf <- plot_grid(NULL, fl_title, NULL, nrow = 1, 
-                              rel_widths = c(0.5, pdfw - 1, 0.5))
-    
-    fl_flext_aspect <- flextable_dim(fl_flext)$aspect_ratio
-    fl_flext_h <- fl_flext_aspect * (pdfw - 1)
-    fl_flext_grob <- gen_grob(fl_flext, fit = "auto", just = "center")
-    fl_flext_pdf <- plot_grid(NULL, fl_flext_grob, NULL, 
-                              nrow = 1, 
-                              rel_widths = c(0.5, pdfw - 1, 0.5))
-    page1_fl <- plot_grid(NULL, fl_title_pdf, fl_flext_pdf, NULL,
-                          ncol = 1, 
-                          rel_heights = c(0.1, 0.5, fl_flext_h, 
-                                          pdfh - (fl_flext_h + 0.6)))
-    page1_fl_filename <- "output/flowering-onsets/flower-onset-page1.pdf"
-    ggsave(filename = page1_fl_filename,
-           plot = page1_fl,
-           width = pdfw,
-           height = pdfh,
-           units = "in",
-           device = cairo_pdf)
-    
-    # Pages to follow with species maps
-    pages <- list()
-    for (j in 1:ceiling(length(fl_ggplots) / 3)) {
-      
-      i <- (j - 1) * 3 + 1
-      
-      plot1 <- plot_grid(NULL, fl_ggplots[[i]], NULL, nrow = 1,
-                         rel_widths = c(0.5, 7.5, 0.5))
-      
-      if (i + 1 > length(fl_ggplots)) {
-        plot2 <- NULL
-      } else {
-        plot2 <- plot_grid(NULL, fl_ggplots[[i + 1]], NULL, nrow = 1,
-                           rel_widths = c(0.5, 7.5, 0.5))
-      }
-      
-      if (i + 2 > length(fl_ggplots)) {
-        plot3 <- NULL
-      } else {
-        plot3 <- plot_grid(NULL, fl_ggplots[[i + 2]], NULL, nrow = 1,
-                           rel_widths = c(0.5, 7.5, 0.5))
-      }
-      
-      pages[[j]] <- plot_grid(NULL, plot1, NULL, plot2, NULL, plot3, NULL,
-                              ncol = 1, 
-                              rel_heights = c(0.6, 3.2, 0.1, 3.2, 0.1, 3.2, 0.6), 
-                              align = "v")
-    }
-    for (j in 1:length(pages)) {
-      pdf_name <- paste0("output/flowering-onsets/flower-onset-map-", j, ".pdf")
-      ggsave(filename = pdf_name, 
-             plot = pages[[j]],
-             width = pdfw, 
-             height = pdfh, 
-             units = "in", 
-             device = cairo_pdf)
-    }
-    # Combine all pages and remove the individual pdfs
-    pdf_name <- "output/flowering-onsets/flower-onset-data-summaries.pdf"
-    ind_map_pages <- list.files(path = "output/flowering-onsets/",
-                                pattern = "flower-onset-map-",
-                                full.names = TRUE)
-    invisible(pdf_combine(c(page1_fl_filename, ind_map_pages), 
-                          output = pdf_name))
-    invisible(file.remove(c(page1_fl_filename, ind_map_pages)))
+  fo_flext_aspect <- flextable_dim(fo_flext)$aspect_ratio
+  fo_flext_h <- fo_flext_aspect * (pdfw - 1)
+  fo_flext_grob <- gen_grob(fo_flext, fit = "auto", just = "center")
+  fo_flext_pdf <- plot_grid(NULL, fo_flext_grob, NULL, 
+                            nrow = 1, 
+                            rel_widths = c(0.5, pdfw - 1, 0.5))
+  page1_fo <- plot_grid(NULL, fo_title_pdf, fo_flext_pdf, NULL,
+                        ncol = 1, 
+                        rel_heights = c(0.1, 0.5, fo_flext_h, 
+                                        pdfh - (fo_flext_h + 0.6)))
+  page1_fo_filename <- "output/flowering-onsets/open-flower-onset-page1.pdf"
   
-  # Create pdf with open flower onset summaries
-    # First page, with title and table
-    fo_title <- ggdraw() + 
-      draw_label("Onset of open flower phenophase", 
-                 fontface = "bold", x = 0, hjust = 0) +
-      theme(plot.margin = margin(0, 0, 0, 7))
-    fo_title_pdf <- plot_grid(NULL, fo_title, NULL, nrow = 1, 
-                              rel_widths = c(0.5, pdfw - 1, 0.5))
-    
-    fo_flext_aspect <- flextable_dim(fo_flext)$aspect_ratio
-    fo_flext_h <- fo_flext_aspect * (pdfw - 1)
-    fo_flext_grob <- gen_grob(fo_flext, fit = "auto", just = "center")
-    fo_flext_pdf <- plot_grid(NULL, fo_flext_grob, NULL, 
-                              nrow = 1, 
-                              rel_widths = c(0.5, pdfw - 1, 0.5))
-    page1_fo <- plot_grid(NULL, fo_title_pdf, fo_flext_pdf, NULL,
-                          ncol = 1, 
-                          rel_heights = c(0.1, 0.5, fo_flext_h, 
-                                          pdfh - (fo_flext_h + 0.6)))
-    page1_fo_filename <- "output/flowering-onsets/open-flower-onset-page1.pdf"
+  if (!file.exists(fo_pdf_name) | (file.exists(fo_pdf_name) & replace == TRUE)) {
     ggsave(filename = page1_fo_filename,
            plot = page1_fo,
            width = pdfw,
            height = pdfh,
            units = "in",
            device = cairo_pdf)
+  }
+  
+  # Pages to follow with species maps
+  pages <- list()
+  for (j in 1:ceiling(length(fo_ggplots) / 3)) {
     
-    # Pages to follow with species maps
-    pages <- list()
-    for (j in 1:ceiling(length(fo_ggplots) / 3)) {
-      
-      i <- (j - 1) * 3 + 1
-      
-      plot1 <- plot_grid(NULL, fo_ggplots[[i]], NULL, nrow = 1,
+    i <- (j - 1) * 3 + 1
+    
+    plot1 <- plot_grid(NULL, fo_ggplots[[i]], NULL, nrow = 1,
+                       rel_widths = c(0.5, 7.5, 0.5))
+    
+    if (i + 1 > length(fo_ggplots)) {
+      plot2 <- NULL
+    } else {
+      plot2 <- plot_grid(NULL, fo_ggplots[[i + 1]], NULL, nrow = 1,
                          rel_widths = c(0.5, 7.5, 0.5))
-      
-      if (i + 1 > length(fo_ggplots)) {
-        plot2 <- NULL
-      } else {
-        plot2 <- plot_grid(NULL, fo_ggplots[[i + 1]], NULL, nrow = 1,
-                           rel_widths = c(0.5, 7.5, 0.5))
-      }
-      
-      if (i + 2 > length(fo_ggplots)) {
-        plot3 <- NULL
-      } else {
-        plot3 <- plot_grid(NULL, fo_ggplots[[i + 2]], NULL, nrow = 1,
-                           rel_widths = c(0.5, 7.5, 0.5))
-      }
-      
-      pages[[j]] <- plot_grid(NULL, plot1, NULL, plot2, NULL, plot3, NULL,
-                              ncol = 1, 
-                              rel_heights = c(0.6, 3.2, 0.1, 3.2, 0.1, 3.2, 0.6), 
-                              align = "v")
     }
+    
+    if (i + 2 > length(fo_ggplots)) {
+      plot3 <- NULL
+    } else {
+      plot3 <- plot_grid(NULL, fo_ggplots[[i + 2]], NULL, nrow = 1,
+                         rel_widths = c(0.5, 7.5, 0.5))
+    }
+  
+    pages[[j]] <- plot_grid(NULL, plot1, NULL, plot2, NULL, plot3, NULL,
+                            ncol = 1, 
+                            rel_heights = c(0.6, 3.2, 0.1, 3.2, 0.1, 3.2, 0.6), 
+                            align = "v")
+  }
+  
+  if (!file.exists(fo_pdf_name) | (file.exists(fo_pdf_name) & replace == TRUE)) {
+  
     for (j in 1:length(pages)) {
       pdf_name <- paste0("output/flowering-onsets/open-flower-onset-map-", 
                          j, ".pdf")
@@ -545,11 +605,12 @@ rm(list = ls())
              units = "in", 
              device = cairo_pdf)
     }
+    
     # Combine all pages and remove the individual pdfs
-    pdf_name <- "output/flowering-onsets/open-flower-onset-data-summaries.pdf"
     ind_map_pages <- list.files(path = "output/flowering-onsets/",
                                 pattern = "open-flower-onset-map-",
                                 full.names = TRUE)
     invisible(pdf_combine(c(page1_fo_filename, ind_map_pages), 
-                          output = pdf_name))
+                          output = fo_pdf_name))
     invisible(file.remove(c(page1_fo_filename, ind_map_pages)))
+  }
