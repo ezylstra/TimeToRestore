@@ -162,6 +162,25 @@ require(pdftools)
     }
   }
 
+# Save flowering onset data to file -------------------------------------------#
+
+  # First remove observations from wateryr 2024, since we only have data through
+  # Dec 2023
+  py <- filter(py, wateryr < 2024)
+  
+  # Extract year range
+  wateryr_min <- min(py$wateryr)
+  wateryr_max <- max(py$wateryr)
+  
+  data_filename <- paste0("data/flowering-onsets-", wateryr_min, "-",
+                          wateryr_max, ".csv")
+  if (!file.exists(data_filename) | 
+      (file.exists(data_filename) & replace == TRUE)) {
+    write.csv(py, 
+              file = data_filename,
+              row.names = FALSE)
+  }
+
 # Select parameters for data inclusion/exclusion ------------------------------#
   
   # Set the maximum number of days prior to a "yes" that we'll need a "no" in 
@@ -198,12 +217,10 @@ require(pdftools)
   # 1) flowers/open flowers weren't observed (firstyes = NA),
   # 2) "yes" to phenophase status wasn't preceded by a "no" (dayssince_lastno = NA)
   # 3) preceding "no" occurred more than XX days ago (dayssince_lastno > daysprior)
-  # 4) wateryr = 2024 (because we just have data for Oct-Dec 2023)
   py <- py %>%
     filter(!is.na(firstyes)) %>%
     filter(!is.na(dayssince_lastno)) %>%
-    filter(dayssince_lastno <= daysprior) %>%
-    filter(wateryr != 2024)
+    filter(dayssince_lastno <= daysprior)
   count(py, phenophase)
   # 2803, 3822 plant-yrs for flowers, open flowers, respectively
   
