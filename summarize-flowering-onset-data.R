@@ -67,9 +67,9 @@ require(pdftools)
   df <- df %>%
     mutate(mon = month(observation_date)) %>%
     mutate(wateryr = ifelse(mon %in% 10:12, year + 1, year)) %>%
-    mutate(wateryrday1 = make_date(year = wateryr - 1, month = 9, day = 30)) %>%
-    mutate(dowy = as.numeric(observation_date - wateryrday1)) %>%
-    select(-c(mon, wateryrday1))
+    mutate(wateryrday0 = make_date(year = wateryr - 1, month = 9, day = 30)) %>%
+    mutate(dowy = as.numeric(observation_date - wateryrday0)) %>%
+    select(-c(mon, wateryrday0))
     
   # Create a unique ID for each plant-wateryr to make various matches easier
   df <- df %>%
@@ -86,7 +86,8 @@ require(pdftools)
   
   # Create a new dataframe to hold plant-wateryr stats 
   py <- df %>%
-    group_by(plantwateryr, plant_id, wateryr, common_name, state, lat, lon) %>%
+    group_by(plantwateryr, plant_id, wateryr, common_name, site_id, 
+             state, lat, lon) %>%
     summarize(n_obs = n(),
               n_status_fl = sum(!is.na(status_fl)),
               n_status_fo = sum(!is.na(status_fo)),
