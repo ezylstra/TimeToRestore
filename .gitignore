@@ -5,3 +5,6 @@
 
 # Zip files with original iNat data (zip filenames always start with a number)
 data/iNat/[0-9]*.zip
+
+# Zip files with original daymet data
+data/climate/*.zip
