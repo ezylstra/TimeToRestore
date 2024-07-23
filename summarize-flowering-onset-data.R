@@ -2,7 +2,7 @@
 # Extract and summarize the amount of data available on flower/open flower onset
 
 # Erin Zylstra
-# 2024-07-19
+# 2024-07-23
 ################################################################################
 
 require(dplyr)
@@ -20,7 +20,7 @@ require(pdftools)
 
 # Logical indicating whether to replace csv/pdf files if they already exist ---#
 
-  replace <- FALSE
+  replace <- TRUE
 
 # Set parameters for pdf output -----------------------------------------------#
 
@@ -314,11 +314,21 @@ require(pdftools)
               lon_max, dist_to_SC_km)) %>%
     arrange(desc(n_plantyrs))
   
-  fl_cap <- paste("Summary of data available to model variation in", pheno_name,
-                  "onset date in species with at least", min_plantyrs, 
-                  "plant-yrs of data. A plant-wateryr was considered to have a",
-                  "valid onset date if the first 'yes' was preceded by a 'no'",
-                  "within", daysprior, "days.")
+  fl_cap_start <- paste("Summary of data available to model variation in", 
+                        pheno_name)
+  cap_end <- paste("onset date in species with at least", min_plantyrs, 
+                   "plant-years of data, where a plant-year is all observations",
+                   "made of a plant in a particular water year (2023 = 1 Oct",
+                   "2022 - 30 Sep 2023). A plant-year was considered to have a", 
+                   "valid onset date if the first 'yes' was preceded by a 'no'",
+                   "within", daysprior, "days. Region indicates where the",
+                   "majority of plants were located in the US (e.g., east =",
+                   "eastern US). Table lists the number of unique plant",
+                   "locations in the US, the number of unique plant locations",
+                   "in each of the four states in the southcentral region, and",
+                   "the latitudinal range (in degrees) of observed plant",
+                   "locations.")
+  fl_cap <- paste(fl_cap_start, cap_end)
   
   fl_flext <- flextable(py_fl_pdf) %>%
     add_header_row(
@@ -479,11 +489,9 @@ require(pdftools)
               lon_max, dist_to_SC_km)) %>%
     arrange(desc(n_plantyrs))
   
-  fo_cap <- paste("Summary of data available to model variation in", pheno_name,
-                  "onset date in species with at least", min_plantyrs, 
-                  "plant-yrs of data. A plant-wateryr was considered to have a",
-                  "valid onset date if the first 'yes' was preceded by a 'no'",
-                  "within", daysprior, "days.")
+  fo_cap_start <- paste("Summary of data available to model variation in", 
+                        pheno_name)
+  fo_cap <- paste(fo_cap_start, cap_end)
   
   fo_flext <- flextable(py_fo_pdf) %>%
     add_header_row(
@@ -631,3 +639,4 @@ require(pdftools)
                           output = fo_pdf_name))
     invisible(file.remove(c(page1_fo_filename, ind_map_pages)))
   }
+  
