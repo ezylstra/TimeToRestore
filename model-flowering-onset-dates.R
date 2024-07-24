@@ -91,7 +91,7 @@ rm(list = ls())
   onset <- onset %>%
     filter(common_name %in% spp_all)
   
-# Download daymet data (if needed) --------------------------------------------#  
+# Load weather data (download data if not done yet) ---------------------------#  
   
   sites <- onset %>%
     select(site_id, lon, lat) %>%
@@ -100,18 +100,30 @@ rm(list = ls())
   nsites <- nrow(sites)
   yrs <- (min(onset$wateryr) - 1):max(onset$wateryr)
   
-  daymet_csv <- paste0("data/climate/daymet-", nsites, "sites-", 
-                       first(yrs), "-", last(yrs), ".csv")
-  daymet_zip <- str_replace(daymet_csv, ".csv", ".zip")
-  
-  if (!file.exists(daymet_zip)) {
+  weather_filename <- paste0("data/climate/seasonal-weather-",
+                             nsites, "sites-", 
+                             first(yrs), "-", last(yrs), ".csv")
+
+  # If not done already, download daymet data and summarize
+  # Note: this will take quite a bit of time!
+  if (!file.exists(weather_filename)) {
     source("download-daymet.R")
   }
   
-  # TODO ###########################
-  # Then unzip, load csv, remove csv
-  # Summarize climate data by season...
+  # Load data
+  weather <- read.csv(weather_filename)
   
+  # Seasons (as previously defined by NPN)
+    # Spring = Mar-May
+    # Summer = Jun-Aug
+    # Fall = Sep-Nov
+    # Winter = Dec-Feb (assigned to year for Jan-Feb)
+  # Weather data
+    # prcp = Accumumlated precipitation (mm)
+    # tmin = Mean of daily minimum temperatures (degC)
+    # tmax = Mean of daily maximum temperatures (degC)
+  
+
   
 # Test workflow/run for one species -------------------------------------------#
   
