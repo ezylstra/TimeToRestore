@@ -10,6 +10,7 @@ require(lubridate)
 require(stringr)
 require(tidyr)
 require(ggplot2)
+# require(ggpubr)
 
 rm(list = ls())
 
@@ -123,12 +124,11 @@ rm(list = ls())
     # tmin = Mean of daily minimum temperatures (degC)
     # tmax = Mean of daily maximum temperatures (degC)
   
-
-  
 # Test workflow/run for one species -------------------------------------------#
   
   # Important to remember that all day numbers in the onset dataset are actually
-  # day-of-WATER-year (dowy). Creating simple table to look at important day 
+  # day-of-WATER-year (dowy). Water year runs 1 Oct - 30 Sep (eg, wateryr 2022 =
+  # 1 Oct 2021 - 30 Sep 2022). Creating simple table to look at important day 
   # numbers (no leap year).
   dowy <- data.frame(first_date = c(as.Date(paste0("2021-", 10:12, "-01")),
                                     as.Date(paste0("2022-", 1:9, "-01"))))
@@ -163,15 +163,63 @@ rm(list = ls())
     filter(common_name == spp)
 
   # Identify when the plant flowers so we know what climate data to grab (to
-  # ensure it's data preceding the event and not after). For the purposes of 
-  # describing seasonal climate conditions, NPN has previously defined Spring = 
-  # Mar-May; Summer data = Jun-Aug.
+  # ensure it's data preceding the event and not after). 
   median_onset <- median(onsetsub$firstyes)
   # If onset is before 1 Apr (dowy < 183), then use spring and summer weather 
-  # from previous calendar year.
+    # from previous calendar year.
   # If onset is 1 Apr - 30 June (dowy = 183 - 273), then use spring weather in 
-  # current year and summer weather in previous year
+    # current year and summer weather in previous year
   # If onset is on or after 1 Jul (dowy = 274), then use spring and summer 
-  # weather from current calendar year.
+    # weather from current calendar year.
   spring <- ifelse(median_onset < 183, "previous", "current")
   summer <- ifelse(median_onset %in% 183:273, "previous", "current")
+  
+  # Put weather data in wide form
+  weather <- weather %>%
+    pivot_wider(names_from = season, 
+                values_from = c(prcp, tmin, tmax),
+                names_glue = "{season}_{.value}")
+  
+  # Extract weather data for sites, years in onset dataset
+  weathersub <- expand.grid(
+    site_id = sort(unique(onsetsub$site_id)),
+    onset_yr = sort(unique(onsetsub$wateryr)),
+    KEEP.OUT.ATTRS = FALSE
+  )
+  weathersub <- weathersub %>%
+    rowwise() %>%
+    mutate(spring_yr = ifelse(spring == "current", onset_yr, onset_yr - 1),
+           summer_yr = ifelse(summer == "current", onset_yr, onset_yr - 1)) %>%
+    mutate(fall_yr = onset_yr - 1,
+           winter_yr = onset_yr)
+  weathersub <- weathersub %>%
+    left_join(select(weather, site_id, seasonyr, contains("spring")),
+              by = c("site_id", "spring_yr" = "seasonyr")) %>%
+    left_join(select(weather, site_id, seasonyr, contains("summer")),
+              by = c("site_id", "summer_yr" = "seasonyr")) %>%
+    left_join(select(weather, site_id, seasonyr, contains("fall")),
+              by = c("site_id", "fall_yr" = "seasonyr")) %>%
+    left_join(select(weather, site_id, seasonyr, contains("winter")),
+              by = c("site_id", "winter_yr" = "seasonyr")) %>%
+    select(-c(spring_yr, summer_yr, fall_yr, winter_yr))
+  
+  # Add weather data to onset data
+  onsetsub <- onsetsub %>%
+    left_join(weathersub, by = c("site_id", "wateryr" = "onset_yr"))
+
+  # Do we want to standardize variables before running models?
+  
+  # View scatterplots
+  onsetsubl <- onsetsub %>%
+    select(common_name, plantwateryr, firstyes, contains("spring"), 
+           contains("summer"), contains("fall"), contains("winter")) %>%
+    pivot_longer(cols = spring_prcp:winter_tmax, 
+                 names_to = "weather_var",
+                 values_to = "value") %>%
+   separate(weather_var, sep = "_", into = c("season", "var"))
+  ggplot(data = onsetsubl, aes(x = value, y = firstyes)) +
+    geom_point() +
+    stat_smooth(method = "lm", formula = y ~ x) +
+    facet_grid(rows = vars(season), cols = vars(var), scales = "free_x")
+  
+  # Use ggpubr::stat_cor() to get things like r, p-values on plots?
