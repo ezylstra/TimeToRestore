@@ -44,8 +44,7 @@ daymet_df <- daymet_df %>%
 
 # Save csv and put in a zip file. Remove csv and original zip file (it's huge)
 write.csv(daymet_df, 
-          file = daymet_file,
+          file = daymet_csv,
           row.names = FALSE)
-zip_file <- str_replace(daymet_file, ".csv", ".zip")
-zip(zip_file, files = daymet_file)
-file.remove(daymet_file)
+zip(daymet_zip, files = daymet_csv)
+file.remove(daymet_csv)

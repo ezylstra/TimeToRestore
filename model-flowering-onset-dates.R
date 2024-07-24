@@ -2,19 +2,14 @@
 # Model variation in flowering onset dates
 
 # Erin Zylstra
-# 2024-07-23
+# 2024-07-24
 ################################################################################
 
 require(dplyr)
 require(lubridate)
 require(stringr)
 require(tidyr)
-# require(ggplot2)
-# require(flextable)
-# require(cowplot)
-# require(terra)
-# require(tidyterra)
-# require(pdftools)
+require(ggplot2)
 
 rm(list = ls())
 
@@ -63,9 +58,8 @@ rm(list = ls())
     filter(!is.na(firstyes)) %>%
     filter(!is.na(dayssince_lastno)) %>%
     filter(dayssince_lastno <= daysprior)
-  count(onset, phenophase)
-  # 2803, 3822 plant-yrs for flowers, open flowers, respectively
-  
+  # count(onset, phenophase)
+
 # Prioritize species to use in models -----------------------------------------#
 
   # Priority 1: 2 or more locations in SC region
@@ -86,7 +80,7 @@ rm(list = ls())
     data.frame()
 
   # Remove species from onset data if they're not priority 1-3 (Will keep onset
-  # data for both phenophases if the species is considered higher priority for
+  # data for both phenophases if the species is considered priority 1-3 for
   # at least one phenophase)
   spp_all <- spp_onsets %>%
     filter(!is.na(priority)) %>%
@@ -106,10 +100,11 @@ rm(list = ls())
   nsites <- nrow(sites)
   yrs <- (min(onset$wateryr) - 1):max(onset$wateryr)
   
-  daymet_file <- paste0("data/climate/daymet-", nsites, "sites-", 
-                        first(yrs), "-", last(yrs), ".csv")
+  daymet_csv <- paste0("data/climate/daymet-", nsites, "sites-", 
+                       first(yrs), "-", last(yrs), ".csv")
+  daymet_zip <- str_replace(daymet_csv, ".csv", ".zip")
   
-  if (!file.exists(daymet_file)) {
+  if (!file.exists(daymet_zip)) {
     source("download-daymet.R")
   }
   
