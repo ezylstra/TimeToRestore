@@ -2,7 +2,7 @@
 # Model variation in flowering onset dates
 
 # Erin Zylstra
-# 2024-07-31
+# 2024-08-02
 ################################################################################
 
 require(dplyr)
@@ -11,6 +11,7 @@ require(stringr)
 require(tidyr)
 require(ggplot2)
 require(ggpubr)
+require(nlme)
 require(lme4)
 
 rm(list = ls())
@@ -64,11 +65,11 @@ rm(list = ls())
 
 # Prioritize species to use in models -----------------------------------------#
 
-  # Priority 1: 2 or more locations in SC region
-  # Priority 2: 1 location in SC region
+  # Priority 1: 2 or more plants located in SC region
+  # Priority 2: 1 plant located in SC region
   # Priority 3: nearest plant location < 200 km from SC region
   # If a species-phenophase doesn't meet any of these criteria, probably won't 
-    # create a model for onset date (and leaving priority = NA)
+    # create a model for onset date (leaving priority = NA)
 
   spp_onsets <- spp_onsets %>%
     rowwise() %>%
@@ -93,7 +94,7 @@ rm(list = ls())
   onset <- onset %>%
     filter(common_name %in% spp_all)
   
-# Load weather data (download data if not done yet) ---------------------------#  
+# Load and format weather data (download data if not done yet) ----------------#  
   
   sites <- onset %>%
     select(site_id, lon, lat) %>%
@@ -125,6 +126,12 @@ rm(list = ls())
     # tmin = Mean of daily minimum temperatures (degC)
     # tmax = Mean of daily maximum temperatures (degC)
   
+  # Put weather data in wide form
+  weather <- weather %>%
+    pivot_wider(names_from = season, 
+                values_from = c(prcp, tmin, tmax),
+                names_glue = "{season}_{.value}")
+  
 # Test workflow/run for one species -------------------------------------------#
   
   # Important to remember that all day numbers in the onset dataset are actually
@@ -141,11 +148,7 @@ rm(list = ls())
     mutate(dowy = ifelse(dowy > 365, NA, dowy),
            doy = ifelse(doy < 1, NA, doy))
   dowy
-    # Jan 1 = 93
-    # Mar 1 = 152
-    # Jun 1 = 244
-    # Sep 1 = 336
-  
+
   phenophases <- c("flower", "open flower")
   priority_levels <- 1:3
   
@@ -162,12 +165,25 @@ rm(list = ls())
   
   spp <- spp_list[2]
   
+  # Extract onset data for species, phenophase
   onsetsub <- onset %>%
     filter(phenophase == pheno) %>%
     filter(common_name == spp)
-
-  # Identify when the plant flowers so we know what climate data to grab (to
-  # ensure it's data preceding the event and not after). 
+  
+  # Look at distribution of measurements among sites and years
+  count(onsetsub, site_id) # About half of sites have 1 measurement
+  count(onsetsub, wateryr) # 12 measurements in 2023, all other years 1-6
+  count(onsetsub, site_id, wateryr) # 1-3 observations per site-year
+  onsetsub %>%
+    group_by(lat) %>%
+    summarize(n_obs = n(),
+              n_years = length(unique(wateryr))) %>%
+    data.frame()
+    # 2 sites ~ 37 deg lat where plants were observed in 5 years. Most other 
+    # sites only have data from 1 year.
+  
+  # Identify when the plant flowers so we know what weather data to grab (to
+  # ensure weather data precedes the event). 
   median_onset <- median(onsetsub$firstyes)
   # If onset is before 1 Apr (dowy < 183), then use spring and summer weather 
     # from previous calendar year.
@@ -177,12 +193,6 @@ rm(list = ls())
     # weather from current calendar year.
   spring <- ifelse(median_onset < 183, "previous", "current")
   summer <- ifelse(median_onset %in% 183:273, "previous", "current")
-  
-  # Put weather data in wide form
-  weather <- weather %>%
-    pivot_wider(names_from = season, 
-                values_from = c(prcp, tmin, tmax),
-                names_glue = "{season}_{.value}")
   
   # Extract weather data for sites, years in onset dataset
   weathersub <- expand.grid(
@@ -210,29 +220,35 @@ rm(list = ls())
   # Add weather data to onset data
   onsetsub <- onsetsub %>%
     left_join(weathersub, by = c("site_id", "wateryr" = "onset_yr"))
-
-  # View scatterplots: matrix of onset date vs weather variable (rows = 
-  # season, columns = precip, tmin, tmax)
+  # Add firstyes doy (not dowy) 
+  onsetsub <- onsetsub %>%
+    mutate(firstyes_doy = firstyes - 92)
+  
+  # Put data in long form, for easy plotting
   onsetsubl <- onsetsub %>%
-    select(common_name, plantwateryr, firstyes, contains("spring"), 
-           contains("summer"), contains("fall"), contains("winter")) %>%
+    select(common_name, plantwateryr, wateryr, firstyes, firstyes_doy, 
+           contains("spring"), contains("summer"), contains("fall"), 
+           contains("winter")) %>%
     pivot_longer(cols = spring_prcp:winter_tmax, 
                  names_to = "weather_var",
                  values_to = "value") %>%
     separate(weather_var, sep = "_", into = c("season", "var")) %>%
-    mutate(firstyes_doy = firstyes - 92) %>%
-    mutate(firstyes_date = as.Date(firstyes_doy, origin = "2021-12-31")) %>%
     mutate(Var = case_when(
       var == "prcp" ~ "Precipitation (mm)",
       var == "tmax" ~ "Maximum temperature (C)",
       var == "tmin" ~ "Minimum temperature (C)")) %>%
     mutate(Season = factor(str_to_sentence(season),
                            levels = c("Winter", "Spring", "Summer", "Fall")))
-  
+
+  # Create scatterplots: matrix of onset date vs weather variable (rows = 
+  # season, columns = precip, tmin, tmax). NOTE: these scatterplots and r, P 
+  # listed on each plot do not take things like repeated measures or latitude
+  # into account.
   date_breaks <- dowy %>%
     filter(!is.na(doy)) %>%
     filter(mon %in% seq(1, 12, by = 3))
   
+  # Scatterplot with all data
   ggplot(data = onsetsubl, aes(x = value, y = firstyes_doy)) +
     geom_point() +
     stat_smooth(method = "lm", formula = y ~ x) +
@@ -241,81 +257,205 @@ rm(list = ls())
              r.accuracy = 0.01, p.accuracy = 0.01) +
     scale_y_continuous(limits = c(1, 366), 
                        breaks = c(date_breaks$doy, 366),
-                       labels = format(c(date_breaks$first_date, as.Date("2023-01-01")), 
+                       labels = format(c(date_breaks$first_date, 
+                                         as.Date("2023-01-01")), 
                                        "%b")) +
     labs(x = "", y = "Onset date", 
          title = paste0(str_to_sentence(spp), ", ", pheno, " onset date"))
   
   # Get table with pearson corr coefs and associated p-values
-  cors <- onsetsubl %>%
-    group_by(season, var) %>%
-    summarize(cor = cor.test(firstyes_doy, value)$estimate,
-              p.cor = cor.test(firstyes_doy, value)$p.value,
-              , .groups = "keep") %>%
-    data.frame() %>%
-    filter(p.cor < 0.10) %>%
-    mutate(seas_var = paste0(season, "_", var))
-
-  # Note that the r, P values are for simple linear correlations (Pearson), and
-  # don't take things like repeated measures into account
+  # cors <- onsetsubl %>%
+  #   group_by(season, var) %>%
+  #   summarize(cor = cor.test(firstyes_doy, value)$estimate,
+  #             p.cor = cor.test(firstyes_doy, value)$p.value,
+  #             , .groups = "keep") %>%
+  #   data.frame()
   
-  # Maybe we can use these figures to identify weather variables with the most
-  # explanatory power (to include in linear models). Start with P <= 0.10?
+  # Same scatterplot, but highlight data from 2023 in red
+  onsetsubl <- onsetsubl %>%
+    mutate(y2023 = ifelse(wateryr == 2023, "2023", paste0(min(yrs), "-2022")),
+           y2023 = factor(y2023, levels = c(paste0(min(yrs), "-2022"), "2023")))
+  ggplot(data = onsetsubl, aes(x = value, y = firstyes_doy)) +
+    geom_point(aes(group = y2023, color = y2023)) +
+    scale_color_manual(values = c("black","salmon"), name = "Year") +
+    stat_smooth(method = "lm", formula = y ~ x) +
+    facet_grid(rows = vars(Season), cols = vars(Var), scales = "free_x") +
+    stat_cor(method = "pearson", cor.coef.name = "r",
+             r.accuracy = 0.01, p.accuracy = 0.01) +
+    scale_y_continuous(limits = c(1, 366), 
+                       breaks = c(date_breaks$doy, 366),
+                       labels = format(c(date_breaks$first_date, 
+                                         as.Date("2023-01-01")), 
+                                       "%b")) +
+    labs(x = "", y = "Onset date", 
+         title = paste0(str_to_sentence(spp), ", ", pheno, " onset date"))  
   
-  # After looking at results from just a few linear models, I'm not sure these
-  # plots are helpful at all
+  # Some onset dates in 2023 are much later than other years. When late onset
+  # dates were associated with warmer tmin or tmax, it reduced significance of
+  # correlations between temperature and onset date based on 2012-2022 data.
   
-  # Models that Alyssa et al. ran for this species/phenophase previously had
-  # very different results. Looks like that's primarily because data from 2023
-  # are very different. Majority of onset dates in 2023 are after doy 200, which 
-  # rarely happened before 2023. Relationships between onset dates and weather
-  # at least fall and spring tmins) seemed more significant before 2023 data 
-  # were added in....
+  # Look at this a bit more closely...
   
   # Correlation (firstyes ~ spring min temp) with all years data
   ggplot(onsetsub, aes(x = spring_tmin, y = firstyes_doy)) + 
     geom_point() +
     stat_smooth(method = "lm", formula = y ~ x) +
     stat_cor(method = "pearson", cor.coef.name = "r",
-             r.accuracy = 0.01, p.accuracy = 0.01)
-  
+             r.accuracy = 0.01, p.accuracy = 0.01, 
+             label.x = 15, label.y= 250)
   # Correlation excluding 2023
   ggplot(filter(onsetsub, wateryr < 2023), 
          aes(x = spring_tmin, y = firstyes_doy)) + 
     geom_point() +
     stat_smooth(method = "lm", formula = y ~ x) +
     stat_cor(method = "pearson", cor.coef.name = "r",
+             r.accuracy = 0.01, p.accuracy = 0.01,
+             label.x = 15, label.y= 250)
+  
+  # Onset dates, 2023
+  onsetsub %>%
+    filter(wateryr == 2023) %>%
+    select(site_id, lat, plant_id, wateryr, firstyes_doy, spring_tmin) %>%
+    arrange(firstyes_doy)
+  
+  # Comparison of data: 2023 vs 2012-2022
+  onsetsubl %>%
+    filter(season == "spring", var == "tmin") %>%
+    group_by(y2023) %>%
+    summarize(n_onset = n(),
+              # spr_tmin_min = round(min(value), 1),
+              # spr_tmin_mean = round(mean(value), 1),
+              # spr_tmin_max = round(max(value), 1),
+              onset_min = min(firstyes_doy),
+              onset_median = round(median(firstyes_doy)),
+              onset_mean = round(mean(firstyes_doy)),
+              onset_max = max(firstyes_doy)) %>%
+    data.frame()
+  
+  # Quick look to see how much onset dates vary by site (here, a lot)
+  ggplot(data = onsetsub, aes(x = as.factor(site_id), y = firstyes_doy)) +
+    geom_boxplot() +
+    geom_jitter(color = "blue", width = 0.1, height = 0)
+  
+  # Quick look for correlations between onset dates and latitude (yes, positive)
+  ggplot(data = onsetsub, aes(x = lat, y = firstyes_doy)) +
+    geom_point() +
+    stat_smooth(method = "lm", formula = y ~ x) +
+    labs(x = "Latitude", y = "Onset DOY") +
+    stat_cor(method = "pearson", cor.coef.name = "r",
              r.accuracy = 0.01, p.accuracy = 0.01)
   
-  # Onset dates, all years
-  select(onsetsub, site_id, plant_id, wateryr, firstyes_doy, fall_tmin)
-  # Onset dates, 2023
-  select(filter(onsetsub, wateryr == 2023), 
-         site_id, lat, plant_id, wateryr, firstyes_doy, fall_tmin)
+  # Is latitude correlated with weather variables? (yes, highly negatively
+  # correlated with all temperature variables [not with precip])
+  round(cor(select(onsetsub, contains("winter"), contains("spring"),
+                   contains("summer"), contains("fall")), onsetsub$lat), 2)
 
-
+  # Quick look to see how much onset dates vary by year
+  ggplot(data = onsetsub, aes(x = as.factor(wateryr), y = firstyes_doy)) +
+    geom_boxplot() +
+    geom_jitter(color = "blue", width = 0.1, height = 0)
+  
+  
   # Run a few linear models with random effects
+  # (Note: using firstyes_doy and not firstyes since dates are later in year)
+  
   seasons <- c("winter", "spring", "summer", "fall")
   vars <- c("prcp", "tmax", "tmin")
   
+    # Pick one weather variable for now (spring_tmin)
     seas <- seasons[2]
     var <- vars[3]
     seas_var <- paste0(seas, "_", var)
-    m1formula <- as.formula(paste0("firstyes ~ ", seas_var, " + (1|site_id)"))
-    m1 <- lmer(m1formula, data = onsetsub)
-    summary(m1)
-    m2formula <- as.formula(paste0("firstyes ~ ", seas_var, " + lat + (1|site_id)"))
-    m2 <- lmer(m2formula, data = onsetsub)
-    summary(m2)
-    m3formula <- as.formula(paste0("firstyes ~ ", seas_var, " * lat + (1|site_id)"))
-    m3 <- lmer(m3formula, data = onsetsub)
-    summary(m3)
- 
-  anova(m2, m1)
-  anova(m3, m1)
+    
+    # Code I could use to run things in a loop over different weather vars...
+    # m1formula <- as.formula(paste0("firstyes ~ ", seas_var, " + (1|site_id)"))
+    # m1 <- lmer(m1formula, data = onsetsub)
+    
+    # Using lme4 package so we can create more complex random effect structures
+    # (and hardcoding model formulas for now)
+      
+    # Model with year and site random effects (crossed)
+    m.rsiteyr <- lmer(firstyes_doy ~ spring_tmin + (1|site_id) + (1|wateryr),
+                      data = onsetsub, REML = TRUE)
+    summary(m.rsiteyr)
+    confint(m.rsiteyr)
+      # Negative effect of spring min temps (though 95% CI does span 0)
+      # Massive vartiation among sites, much less among years
+    
+      # On a side note: is a model with latitude instead of spring temps better?
+      mlat.rsiteyr <- lmer(firstyes_doy ~ lat + (1|site_id) + (1|wateryr),
+                           data = onsetsub, REML = TRUE)
+      summary(mlat.rsiteyr)
+      confint(mlat.rsiteyr)
+      anova(mlat.rsiteyr, m.rsiteyr) # Model values almost identical...
+      # Maybe not surprising given that there's so few sites that were observed
+      # in multiple years. Can't separate temperature and latitudinal effects.
+      # Need way more data in the SC region and/or more sites observed in 
+      # multiple years.
+    
+    # Compare model with spring temp, 2 RE with model that doesn't have year REs
+    m.rsite <- lmer(firstyes_doy ~ spring_tmin + (1|site_id),
+                    data = onsetsub, REML = TRUE)
+    summary(m.rsite)
+      # Smaller (and less signif) effect of spring min temps
+    
+    # For some reason, using anova refits models with ML (Though I think REML
+    # is appropriate when the fixed effect structure is the same. ML is 
+    # appropriate when comparing models with/without REs and models with 
+    # different fixed effects strutures. See here for clear explanation:
+    # https://ourcodingclub.github.io/tutorials/mixed-models/ which is based on 
+    # Zuur et al. 2009. 
+    # anova(m.rsiteyr, m.rsite)
+    
+    # logLik for model with both random effects about 1.5 points lower
+    logLik(m.rsiteyr); logLik(m.rsite)
+    AIC(m.rsiteyr); AIC(m.rsite)
 
-  summary(msimp1 <- lm(firstyes ~ spring_tmax, data = onsetsub))
-  summary(msimp2 <- lm(firstyes ~ spring_tmax + lat, data = onsetsub))
-  summary(msimp3 <- lm(firstyes ~ spring_tmax * lat, data = onsetsub))
+    # Evaluate model with spring min temp and 2 random effects
+    coef(m.rsiteyr) # look at site- and yr-specific intercepts
+      # Interesting that 2021 and 2023 didn't have the highest intercepts
+      # Is that because higher latitude sites were sampled in those years?
+      ggplot(data = onsetsub, aes(x = as.factor(wateryr), y = lat)) +
+        geom_boxplot() +
+        geom_jitter(color = "blue", width = 0.1, height = 0)
+    
+    plot(m.rsiteyr) # resid vs fitted values. One data point with a way lower fitted
+      # value stands out. Without that site, it's possible that there's a funnel
+      # shape (more variance in residuals at higher fitted values). That seems
+      # to track with plot below, where there's more variance in onset dates
+      # at higher spring tmin values.
+      ggplot(onsetsub, aes(x = spring_tmin, y = firstyes_doy)) + 
+        geom_point() +
+        stat_smooth(method = "lm", formula = y ~ x) +
+        stat_cor(method = "pearson", cor.coef.name = "r",
+                 r.accuracy = 0.01, p.accuracy = 0.01, 
+                 label.x = 15, label.y= 250)
+    
+        # Could try Levene's test to see if non-contant variance among groups
+        # though many don't love it.
+        car::leveneTest(onsetsub$firstyes_doy, onsetsub$site_id, center = "mean")
+          # P = 0.20, so not convincing evidence that variance is non-constant
+        
+        # If this had been a problem, could theoretically use the nlme package
+        # and assign weights to groups (varIdent(form = ~1|site_id)), but I 
+        # think this is too complex for our data since many groups have just a 
+        # single measurement.
 
-  # Do we want to standardize variables before running models?
+    qqnorm(resid(m.rsiteyr))
+    qqline(resid(m.rsiteyr))
+      # This pattern (points on right above line, points on left below line)
+      # indicates that residuals aren't normally distributed. Heavy-tailed 
+      # distribution (too many extreme resids)
+    
+    # Other checks with residuals?
+      # Do they vary with latitude?
+      plot(resid(m.rsiteyr) ~ onsetsub$lat) 
+        # More variation @ higher latitudes but not necessarily a pattern 
+        # indicating that we need to add latitude to the modle
+      
+      # Do residuals vary with year?
+      ggplot(data = onsetsub, aes(x = as.factor(wateryr), 
+                                  y = resid(m.rsiteyr))) +
+        geom_boxplot() +
+        geom_jitter(color = "blue", width = 0.1, height = 0)
+        # Looks decent with model that includes wateryr as random effect
