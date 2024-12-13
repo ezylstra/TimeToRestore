@@ -81,6 +81,60 @@ count(filter(samples, n_ests_open > 1 & state %in% states4),
 # NM: two spp with >10 plant-years (rabbitbrush [21], horsetail milkweed [19])
 # TX: two spp with >10 plant-years (sunflower [13], trumpet honeysuckle [12])
 
+# Visualize data/estimates ----------------------------------------------------#
+
+numopen <- count(filter(df, !is.na(num_open)), 
+                 midpoint_fl, midpoint_fo, num_open)
+numopen <- numopen %>%
+  mutate(n_flowers = case_when(
+    midpoint_fl == 2 ~ "Less than 3",
+    midpoint_fl == 7 ~ "3 to 10",
+    midpoint_fl == 56 ~ "11 to 100",
+    midpoint_fl == 551 ~ "101 to 1000",
+    midpoint_fl == 1001 ~ "More than 1000",
+    midpoint_fl == 5510 ~ "1001 to 10,000",
+    midpoint_fl == 10001 ~ "More than 10,000",
+  )) %>%
+  mutate(n_flowers = factor(n_flowers,
+                            levels = c("Less than 3",
+                                       "3 to 10",
+                                       "11 to 100",
+                                       "101 to 1000",
+                                       "More than 1000",
+                                       "1001 to 10,000",
+                                       "More than 10,000")))
+
+numopen %>% arrange(num_open)
+numopen$num_open_bins <- cut(numopen$num_open,
+                             breaks = c(0, 3, 10, 100, 1000, 10000),
+                             labels = c("3 or less", 
+                                        "4 to 10",
+                                        "11 to 100",
+                                        "101 to 1000", 
+                                        "1001 to 10000"))
+numopen <- numopen %>%
+  mutate(num_open_bins = factor(num_open_bins,
+                                levels = c("3 or less", 
+                                           "4 to 10",
+                                           "11 to 100",
+                                           "101 to 1000", 
+                                           "1001 to 10000")))
+
+numopen_bins <- numopen %>%
+  group_by(num_open_bins) %>%
+  summarize(nobs = sum(n)) %>%
+  data.frame()
+
+ggplot(data = numopen_bins, aes(x = num_open_bins, y = nobs)) +
+  geom_col(fill = "steelblue3") +
+  labs(y = "No. observations", x = "Estimated number of open flowers")
+
+ggplot(data = filter(numopen, n_flowers != "More than 1000"),
+       aes(x = midpoint_fo, y = n)) +
+  geom_col(fill = "steelblue3") +
+  facet_wrap(.~n_flowers) +
+  labs(y = "No. observations", x = "Proportion open")
+
 # Identify when plants in "peak" flowering ------------------------------------#
 # Based on estimated number of open flowers
 
