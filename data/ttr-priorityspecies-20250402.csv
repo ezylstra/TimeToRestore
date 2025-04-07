@@ -1,0 +1,56 @@
+"common_name","scientific_name","priority","LA_21","NM_21","OK_21","TX_21","TXworkshop_24","NNdata_30plantyrs"
+"cardinalflower","Lobelia cardinalis","regional",1,1,1,0,NA,"x"
+"common buttonbush","Cephalanthus occidentalis","regional",1,0,1,0,NA,"x"
+"common sunflower","Helianthus annuus","regional",0,1,1,0,NA,"x"
+"eastern purple coneflower","Echinacea purpurea","regional",1,1,1,0,NA,"x"
+"showy milkweed","Asclepias speciosa","regional",0,1,1,0,NA,NA
+"spider milkweed","Asclepias viridis","regional",0,1,1,1,NA,NA
+"tall blazing star","Liatris aspera","regional",1,1,1,1,NA,NA
+"wild bergamot","Monarda fistulosa","regional",1,1,1,0,NA,"x"
+"butterfly milkweed","Asclepias tuberosa","4",1,1,1,1,NA,"x"
+"upright prairie coneflower","Ratibida columnifera","3",1,1,0,0,1,NA
+"white heath aster","Symphyotrichum ericoides","3",1,1,1,0,NA,NA
+"blackeyed Susan","Rudbeckia hirta","2",0,1,1,0,NA,"x"
+"Blue Mistflower","Conoclinium coelestinum","2",NA,1,NA,NA,1,NA
+"broadleaf milkweed","Asclepias latifolia","2",0,1,1,0,NA,NA
+"button eryngo","Eryngium yuccifolium","2",1,0,1,0,NA,NA
+"lanceleaf tickseed","Coreopsis lanceolata","2",1,0,1,0,NA,NA
+"New England aster","Symphyotrichum novae-angliae","2",1,0,1,0,NA,"x"
+"purple prairie clover","Dalea purpurea","2",0,1,1,0,NA,NA
+"wrinkleleaf goldenrod","Solidago rugosa","2",1,0,1,0,NA,NA
+"American Basket-flower","Centaurea americana","1",NA,NA,NA,NA,1,NA
+"American Beautyberry","Callicarpa americana","1",NA,NA,NA,NA,1,NA
+"Antelope Horns Milkweed","Asclepias asperula","1",NA,NA,NA,NA,1,NA
+"aquatic milkweed","Asclepias perennis","1",1,0,0,0,NA,NA
+"black elderberry","Sambucus nigra","1",1,0,0,0,NA,"x"
+"Canada goldenrod","Solidago canadensis","1",1,0,0,0,NA,NA
+"Common elderberry","Sambucus nigra","1",1,NA,NA,NA,NA,NA
+"common milkweed","Asclepias syriaca","1",0,0,1,0,NA,"x"
+"Cowpen Daisy","Verbesina encelioides","1",NA,NA,NA,NA,1,NA
+"eastern baccharis","Baccharis halimifolia","1",1,0,0,0,NA,NA
+"Eastern Redbud","Cercis canadensis","1",NA,NA,NA,NA,1,NA
+"Firewheel","Gaillardia pulchella","1",NA,NA,NA,NA,1,NA
+"Frostweed","Verbesina virginica","1",NA,NA,NA,NA,1,NA
+"giant ironweed","Veronia gigantea","1",1,NA,NA,NA,NA,NA
+"Goodding's willow","Salix gooddingii ","1",0,1,0,0,NA,NA
+"Gregg's Mistflower","Conoclinium greggii","1",NA,NA,NA,NA,1,NA
+"Horseherb","Calyptocarpus vialis","1",NA,NA,NA,NA,1,NA
+"horsetail milkweed","Asclepias subverticillata","1",0,1,0,0,NA,"x"
+"Mealy Blue Sage","Salvia farinacea","1",NA,NA,NA,NA,1,NA
+"Missouri goldenrod","Solidago missouriensis","1",0,1,0,0,NA,NA
+"Purple Horsemint","Monarda citriodora","1",NA,NA,NA,NA,1,NA
+"purple passionflower","Passiflora incarnata","1",1,0,0,0,NA,NA
+"red maple","Acer rubrum","1",1,0,0,0,NA,"x"
+"rubber rabbitbrush","Ericameria nauseosa","1",0,1,0,0,NA,"x"
+"seaside goldenrod","Solidago sempervirens","1",1,0,0,0,NA,NA
+"swamp milkweed","Asclepias incarnata","1",0,0,1,0,NA,"x"
+"Swamp sunflower","Helianthus angustifolius","1",1,NA,NA,NA,NA,NA
+"Tall Goldenrod","Solidago altissima","1",NA,NA,NA,NA,1,NA
+"Texas Bluebonnet","Lupinus texensis","1",NA,NA,NA,NA,1,NA
+"Texas Frogfruit","Phyla nodiflora","1",NA,NA,NA,NA,1,NA
+"Texas Lantana","Lantana urticoides","1",NA,NA,NA,NA,1,NA
+"Texas Thistle","Cirsium texanum","1",NA,NA,NA,NA,1,NA
+"trumpet honeysuckle","Lonicera sempervirens","1",1,0,0,0,NA,"x"
+"tufted evening primrose","Oenothera caespitosa","1",0,1,0,0,NA,NA
+"Turk's Cap","Malvaviscus arboreus","1",NA,NA,NA,NA,1,NA
+"Maypop","Passiflora incarnata","0",NA,NA,NA,NA,NA,NA
