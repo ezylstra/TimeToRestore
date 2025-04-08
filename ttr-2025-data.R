@@ -1,7 +1,7 @@
 ################################################################################
 # Summarize and evaluate quality of 2025 TTR data
 # Erin Zylstra
-# 2025-04-07
+# 2025-04-08
 ################################################################################
 
 require(rnpn)
@@ -15,7 +15,7 @@ library(tidyterra)
 rm(list = ls())
 
 # Logical indicating whether to re-download data
-update_data <- FALSE
+update_data <- TRUE
 
 # Create custom rounding function ---------------------------------------------#
 
@@ -94,7 +94,6 @@ phenophases_byspp <- npn_phenophases_by_species(
   species_ids = c(spp_list$species_id),
   date = "2025-01-01"
 ) %>% data.frame()
-
 phenophases_byspp %>%
   group_by(species_id, species_name) %>%
   summarize(p500 = ifelse(500 %in% phenophase_id, 1, 0),
@@ -111,7 +110,7 @@ milkweed_phps <- phenophases_byspp %>%
   filter(str_detect(species_name, "milkweed")) %>%
   select(species_id, species_name, pheno_class_id, phenophase_id, phenophase_name) %>%
   arrange(species_name, pheno_class_id, phenophase_id)
-# Since leaves may be important for monarch eggs, catepillars, we may also 
+# Since leaves may be important for monarch eggs and catepillars, we may also 
 # want to include:
 # 488 = Leaves (for milkweeds only)
 
@@ -127,14 +126,15 @@ states4 <- c("LA", "NM", "OK", "TX")
   # field is missing or incorrect. Won't worry about that here, but would be 
   # better in the long run to check state values based on lat/lons
 
-data_filename <- "data/ttr-data-20242025.csv"
+data_filename <- "data/ttr-data-20232025.csv"
 
 if (!file.exists(data_filename) | update_data == TRUE) {
   
-  # Download flowering, fruiting data for 2024-2025
+  # Download flowering, fruiting data for 2024-2025 (including 2023 so that 
+  # we can calculated individual phenometrics for 2024, if needed)
   status_dl <- npn_download_status_data(
     request_source = "erinz",
-    years = 2024:2025,
+    years = 2023:2025,
     species_ids = spp_list$species_id,
     phenophase_ids= phenophases,
     states = states4,
@@ -150,7 +150,7 @@ if (!file.exists(data_filename) | update_data == TRUE) {
     pull(species_id)
   status_mwleaf_dl <- npn_download_status_data(
     request_source = "erinz",
-    years = 2024:2025,
+    years = 2023:2025,
     species_ids = milkweeds,
     phenophase_ids= 488,
     states = states4,
@@ -260,13 +260,27 @@ status <- status %>%
 # Any duplicate observations by the same person (same plant, date, phenophase
 # status and intensity value)?
 dups <- status %>%
-  group_by(person_id, individual_id, obsdate, phenophase_id, phenophase_status,
-         intensity) %>%
-  summarize(n = n(), .groups = "keep") %>%
-  data.frame()
-# filter(dups, n > 1) # Yes
-sum(dups$n[dups$n > 1]) / nrow(status) * 100
-# 0.45% of observations
+  group_by(person_id, individual_id, obsdate, yr, phenophase_id, 
+           phenophase_status, intensity) %>%
+  summarize(nobs = n(), .groups = "keep") %>%
+  data.frame() %>%
+  count(nobs)
+dups
+n_dups <- sum(dups$n * (dups$nobs - 1))
+n_dups / nrow(status) * 100 
+# 0.18% (n = 45) of all observations in 2023-2025 are duplicates
+
+dups25 <- status %>%
+  filter(yr == 2025) %>%
+  group_by(person_id, individual_id, obsdate, yr, phenophase_id, 
+           phenophase_status, intensity) %>%
+  summarize(nobs = n(), .groups = "keep") %>%
+  data.frame() %>%
+  count(nobs)
+dups25
+n_dups25 <- sum(dups25$n * (dups25$nobs - 1))
+n_dups25 / nrow(status[status$yr == 2025,]) * 100 
+# 0.67% (n = 31) observations in 2025 are duplicates
 
 # Removing duplicates (will cause problems later in script)
 status <- status %>% distinct(across(-observation_id))
@@ -276,11 +290,13 @@ status <- status %>% distinct(across(-observation_id))
 dups2 <- status %>%
   group_by(individual_id, obsdate, phenophase_id, phenophase_status,
            intensity) %>%
-  summarize(n = n(), .groups = "keep") %>%
-  data.frame()
-# filter(dups2, n > 1) # Yes, many more
-sum(dups2$n[dups2$n > 1]) / nrow(status) * 100
-# 4.6% of observations ######################### Come back to this and explore how many conflicting observations?
+  summarize(nobs = n(), .groups = "keep") %>%
+  data.frame() %>%
+  count(nobs)
+dups2
+n_dups2 <- sum(dups2$n * (dups2$nobs - 1))
+n_dups2 / nrow(status) * 100
+# 2.8% of 2023-2025 observations ######################### Come back to this and explore how many conflicting observations?
 
 # Problems related to intensity values ----------------------------------------###########################
 
@@ -290,7 +306,7 @@ status <- status %>%
   mutate(intensity_NA = ifelse(is.na(intensity), 1, 0),
          intensity_NotYes = ifelse(intensity_NA == 0 & phenophase_status != 1, 1, 0))
 filter(status, intensity_NotYes == 1)
-  # One instance (American beautyberry, TX, 2024) with status unknown and reported intensity value
+  # No instances in 2025, one in 2024 (American beautyberry) and 2 in 2023 (trumpet honeysuckle)
 
 # Are people reporting the number of flowers instead of inflorescences?
 # Highest two intensity values for each intensity category worth investigating
@@ -432,75 +448,9 @@ fruit_probs
 
 # Reporting no prior to yes ---------------------------------------------------###########################
 
-# Simplest thing to do is to download individual phenometrics data (which 
-# combines information across observers, which is good if/where LPPs are 
-# coordinating monitoring efforts)
-
-#### DOES THIS MAKE SENSE? Are days since last no properly calculated if they
-# span a calendar year? (eg, last no = Dec 30, first yes = Jan 3 should have
-# prior no value of 4).
-# When I downloaded data below and ran the following there were no prior no 
-# values greater than the first yes DOY, which seems like a problem:
-# sum(!is.na(indph_df$prior_no) & !is.na(indph_df$first_yes_doy) & indph_df$prior_no > indph_df$first_yes_doy)
-
-indph_filename <- "data/ttr-indph-20242025.csv"
-
-if (!file.exists(indph_filename) | update_data == TRUE) {
-  
-  # Download flowering, fruiting data for 2024-2025
-  indph_dl <- npn_download_individual_phenometrics(
-    request_source = "erinz",
-    years = 2024:2025,
-    species_ids = spp_list$species_id,
-    phenophase_ids= phenophases,
-    states = states4,
-    additional_fields = c("observedby_person_id",
-                          "partner_group",
-                          "site_name", 
-                          "species_functional_type"))
-  indph_dl <- data.frame(indph_dl)
-
-  # Download milkweed leafing data for 2024-2025
-  milkweeds <- spp_list %>%
-    filter(str_detect(common_name, "milkweed")) %>%
-    pull(species_id)
-  indph_mwleaf_dl <- npn_download_individual_phenometrics(
-    request_source = "erinz",
-    years = 2024:2025,
-    species_ids = milkweeds,
-    phenophase_ids= 488,
-    states = states4,
-    additional_fields = c("observedby_person_id",
-                          "partner_group",
-                          "site_name", 
-                          "species_functional_type"))
-  indph_mwleaf_dl <- data.frame(indph_mwleaf_dl)
-  
-  # Combine everything and format
-  indph_df <- rbind(indph_dl, indph_mwleaf_dl) %>%
-    mutate(php = case_when(
-            phenophase_id == 500 ~ "flower",
-            phenophase_id == 501 ~ "open flower",
-            phenophase_id == 516 ~ "fruit",
-            phenophase_id == 390 ~ "ripe fruit",
-            phenophase_id == 488 ~ "leaves")) %>%
-    select(-c(observedby_person_id, elevation_in_meters, genus, species, kingdom,
-              phenophase_description, first_yes_month, first_yes_day,
-              first_yes_julian_date, last_yes_year, last_yes_month, 
-              last_yes_day, last_yes_julian_date, numdays_until_next_no)) %>%
-    rename(func_type = species_functional_type,
-           lat = latitude,
-           lon = longitude,
-           prior_no = numdays_since_prior_no)
-  
-  # Write to file
-  write.csv(indph_df, indph_filename, row.names = FALSE)
-  # Remove objects
-  rm(indph_df, indph_dl, indph_mwleaf_dl)
-  
-}
-
-
+# Need to calculate these using status data....
+  # Deal with multiple observers first and allow days since last no to extend 
+  # into prior year
 
   
 
