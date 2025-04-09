@@ -126,15 +126,14 @@ states4 <- c("LA", "NM", "OK", "TX")
   # field is missing or incorrect. Won't worry about that here, but would be 
   # better in the long run to check state values based on lat/lons
 
-data_filename <- "data/ttr-data-20232025.csv"
+data_filename <- "data/ttr-data-20242025.csv"
 
 if (!file.exists(data_filename) | update_data == TRUE) {
   
-  # Download flowering, fruiting data for 2024-2025 (including 2023 so that 
-  # we can calculated individual phenometrics for 2024, if needed)
+  # Download flowering, fruiting data for 2024-2025
   status_dl <- npn_download_status_data(
     request_source = "erinz",
-    years = 2023:2025,
+    years = 2024:2025,
     species_ids = spp_list$species_id,
     phenophase_ids= phenophases,
     states = states4,
@@ -150,7 +149,7 @@ if (!file.exists(data_filename) | update_data == TRUE) {
     pull(species_id)
   status_mwleaf_dl <- npn_download_status_data(
     request_source = "erinz",
-    years = 2023:2025,
+    years = 2024:2025,
     species_ids = milkweeds,
     phenophase_ids= 488,
     states = states4,
@@ -268,7 +267,7 @@ dups <- status %>%
 dups
 n_dups <- sum(dups$n * (dups$nobs - 1))
 n_dups / nrow(status) * 100 
-# 0.18% (n = 45) of all observations in 2023-2025 are duplicates
+# 0.24% (n = 39) of all observations in 2024-2025 are duplicates
 
 dups25 <- status %>%
   filter(yr == 2025) %>%
@@ -280,7 +279,7 @@ dups25 <- status %>%
 dups25
 n_dups25 <- sum(dups25$n * (dups25$nobs - 1))
 n_dups25 / nrow(status[status$yr == 2025,]) * 100 
-# 0.67% (n = 31) observations in 2025 are duplicates
+# 0.68% (n = 31) observations in 2025 are duplicates
 
 # Removing duplicates (will cause problems later in script)
 status <- status %>% distinct(across(-observation_id))
@@ -296,7 +295,8 @@ dups2 <- status %>%
 dups2
 n_dups2 <- sum(dups2$n * (dups2$nobs - 1))
 n_dups2 / nrow(status) * 100
-# 2.8% of 2023-2025 observations ######################### Come back to this and explore how many conflicting observations?
+# 2.7% of 2024-2025 observations (could come back to this and look for 
+# conflicting reports, but this isn't a priority right now)
 
 # Problems related to intensity values ----------------------------------------###########################
 
@@ -304,9 +304,10 @@ n_dups2 / nrow(status) * 100
 # not yes?
 status <- status %>%
   mutate(intensity_NA = ifelse(is.na(intensity), 1, 0),
-         intensity_NotYes = ifelse(intensity_NA == 0 & phenophase_status != 1, 1, 0))
+         intensity_NotYes = ifelse(intensity_NA == 0 & phenophase_status != 1, 
+                                   1, 0))
 filter(status, intensity_NotYes == 1)
-  # No instances in 2025, one in 2024 (American beautyberry) and 2 in 2023 (trumpet honeysuckle)
+  # Just one instance in 2024 (American beautyberry; TX)
 
 # Are people reporting the number of flowers instead of inflorescences?
 # Highest two intensity values for each intensity category worth investigating
@@ -314,7 +315,8 @@ ic_subset <- ic_subset %>%
   group_by(intensity_category_id) %>%
   mutate(intensity_high = ifelse(value %in% tail(sort(value), 2), 1, 0)) %>%
   ungroup() %>%
-  mutate(intensity_high = ifelse(intensity_type == "percent", 
+  mutate(intensity_high = ifelse(!str_detect(intensity_name, 
+                                             "Flowers and flower buds"), 
                                  NA, intensity_high)) %>%
   data.frame()
 status <- status %>%
@@ -335,17 +337,18 @@ intensity_high <- status %>%
          prophigh_2025 = round(nhigh_2025 / n2025, 2)) %>%
   data.frame()
 intensity_high
-# Tables with the number of observations in each high intensity category by
+# Table with the number of observations in each high intensity category by
 # species and year
 intensitycat_high <- status %>%
   filter(intensity_high == 1) %>%
   group_by(common_name, php, intensity_value) %>%
-  summarize(n2024 = sum(yr == 2024),
-            n2025 = sum(yr == 2025),
+  summarize(nhigh_2024 = sum(yr == 2024),
+            nhigh_2025 = sum(yr == 2025),
+            nplants_2024 = n_distinct(individual_id[yr == 2024]),
+            nplants_2025 = n_distinct(individual_id[yr == 2025]),
             .groups = "keep") %>%
   data.frame()
-filter(intensitycat_high, php == "flower")
-filter(intensitycat_high, php == "fruit")
+intensitycat_high
 
 # Phenophase status inconsistencies -------------------------------------------###########################
 
@@ -393,6 +396,9 @@ statusw <- status %>%
   pivot_wider(names_from = php,
               names_glue = "{php}_{.value}",
               values_from = c(status, intensity)) %>%
+  # Add month, day to identify observations in water year
+  mutate(month = month(obsdate),
+         day = day(obsdate)) %>%
   data.frame()
 
 # Identify phenophase status inconsistencies
@@ -412,7 +418,7 @@ statusw <- statusw %>%
   mutate(fruitNA_ripe1 = ifelse(fruit_status == 999 & ripe.fruit_status == 1,
                                 1, 0))
 
-# Table summarizing problems with flower/open flower status
+# Table summarizing problems with flower/open flower status by calendar year
 flower_probs <- statusw %>%
   group_by(common_name, yr) %>%
   summarize(n = n(),
@@ -429,7 +435,7 @@ flower_probs <- statusw %>%
   data.frame()
 flower_probs
 
-# Table summarizing problems with fruit/ripe fruit status
+# Table summarizing problems with fruit/ripe fruit status by calendar year
 fruit_probs <- statusw %>%
   group_by(common_name, yr) %>%
   summarize(n = n(),
@@ -446,13 +452,91 @@ fruit_probs <- statusw %>%
   data.frame()
 fruit_probs
 
+# Table summarizing problems with flower or fruiting status since 1 Oct 2024
+status_probs <- statusw %>%
+  filter(yr == 2025 | (yr == 2024 & month >= 10)) %>%
+  group_by(common_name) %>%
+  summarize(n_flower0_openNot0 = sum(flower0_openNot0 == 1),
+            n_flowerNA_open1 = sum(flowerNA_open1 == 1),
+            n_fruit0_ripeNot0 = sum(fruit0_ripeNot0 == 1),
+            n_fruitNA_ripe1 = sum(fruitNA_ripe1 == 1),
+            .groups = "keep") %>%
+  filter(n_flower0_openNot0 + n_flowerNA_open1 + n_fruit0_ripeNot0 + n_fruitNA_ripe1 > 0) %>%
+  data.frame()
+status_probs
+
 # Reporting no prior to yes ---------------------------------------------------###########################
 
-# Need to calculate these using status data....
-  # Deal with multiple observers first and allow days since last no to extend 
-  # into prior year
+# Focusing on observations made this water year (1 Oct 2024 - present), so we
+# can download individual phenometrics data through rnpn
 
+ip_filename <- "data/ttr-ipdata-20242025.csv"
+
+if (!file.exists(ip_filename) | update_data == TRUE) {
   
+  # Download flowering, fruiting data for Oct 2024 - April 2025 and Oct 2023 - 
+  # Sep 2024 (phenometrics aggregated over water year).
+  # After some experimenting, it looks like when requesting data by water year, 
+  # the years argument corresponds to the start of each year in October. So we
+  # need to use years = 2023:2024 for this call.
+  ip_dl <- npn_download_individual_phenometrics(
+    request_source = "erinz",
+    years = 2023:2024,
+    period_start = "10-01",
+    period_end = "09-30",
+    species_ids = spp_list$species_id,
+    phenophase_ids= phenophases,
+    states = states4,
+    additional_fields = c("observedby_person_id",
+                          "partner_group",
+                          "site_name", 
+                          "species_functional_type"))
+  ip_dl <- data.frame(ip_dl)
+  
+  # Download leafing data for milkweeds in 2024-2025
+  milkweeds <- spp_list %>%
+    filter(str_detect(common_name, "milkweed")) %>%
+    pull(species_id)
+  ip_mwleaf_dl <- npn_download_individual_phenometrics(
+    request_source = "erinz",
+    years = 2023:2024,
+    period_start = "10-01",
+    period_end = "09-30",
+    species_ids = milkweeds,
+    phenophase_ids= 488,
+    states = states4,
+    additional_fields = c("observedby_person_id",
+                          "partner_group",
+                          "site_name", 
+                          "species_functional_type"))
+  ip_mwleaf_dl <- data.frame(ip_mwleaf_dl)
+  
+  # Combine everything and format
+  ip_df <- rbind(ip_dl, ip_mwleaf_dl) %>%
+    mutate(php = case_when(
+      phenophase_id == 500 ~ "flower",
+      phenophase_id == 501 ~ "open flower",
+      phenophase_id == 516 ~ "fruit",
+      phenophase_id == 390 ~ "ripe fruit",
+      phenophase_id == 488 ~ "leaves")) %>%
+    select(-c(observedby_person_id, elevation_in_meters, genus, species, kingdom,
+              phenophase_description, first_yes_month, first_yes_day,
+              first_yes_julian_date, last_yes_year, last_yes_month, 
+              last_yes_day, last_yes_julian_date, numdays_until_next_no)) %>%
+    rename(func_type = species_functional_type,
+           lat = latitude,
+           lon = longitude,
+           prior_no = numdays_since_prior_no)
+  
+  # Write to file
+  write.csv(ip_df, ip_filename, row.names = FALSE)
+  # Remove objects
+  rm(ip_df, ip_dl, ip_mwleaf_dl)
+  
+}
+
+ip <- read.csv(ip_filename)
+
 
 # Summary of data collected ---------------------------------------------------#
 
