@@ -5,17 +5,18 @@
 ################################################################################
 
 require(rnpn)
-require(dplyr)
 require(lubridate)
 require(stringr)
 require(tidyr)
-library(terra)
-library(tidyterra)
+library(ggplot2)
+library(maps)
+# library(mapdata)
+require(dplyr)
 
 rm(list = ls())
 
 # Logical indicating whether to re-download data
-update_data <- TRUE
+update_data <- FALSE
 
 # Create custom rounding function ---------------------------------------------#
 
@@ -25,13 +26,6 @@ update_data <- TRUE
 round_any <- function(x, accuracy) {
   round(x / accuracy) * accuracy
 }
-
-# Load shapefiles with state boundaries ---------------------------------------#
-
-# states <- vect("data/states/cb_2017_us_state_500k.shp")
-# states <- subset(states, 
-#                  !states$STUSPS %in% c("HI", "AK", "VI", "MP", 
-#                                        "GU", "PR", "AS"))
 
 # Identify priority plant species ---------------------------------------------#
 
@@ -254,7 +248,7 @@ status <- status %>%
                    "intensity_value" = "intensity_cat")) %>%
   select(-intensity_category_id)
   
-# Duplicate observations ------------------------------------------------------###########################
+# Duplicate observations ------------------------------------------------------#
 
 # Any duplicate observations by the same person (same plant, date, phenophase
 # status and intensity value)?
@@ -298,7 +292,7 @@ n_dups2 / nrow(status) * 100
 # 2.7% of 2024-2025 observations (could come back to this and look for 
 # conflicting reports, but this isn't a priority right now)
 
-# Problems related to intensity values ----------------------------------------###########################
+# Problems related to intensity values ----------------------------------------#
 
 # Are there instances where there is an intensity value but phenophase status is
 # not yes?
@@ -350,7 +344,7 @@ intensitycat_high <- status %>%
   data.frame()
 intensitycat_high
 
-# Phenophase status inconsistencies -------------------------------------------###########################
+# Phenophase status inconsistencies -------------------------------------------#
 
 # To look at this, can't have more than one observation of a plant per person
 # per day. We've already removed duplicates, but now need to resolve instances 
@@ -465,7 +459,144 @@ status_probs <- statusw %>%
   data.frame()
 status_probs
 
-# Reporting no prior to yes ---------------------------------------------------###########################
+# Sites monitored this water year ---------------------------------------------#
+
+# Plot locations where flowering/fruiting or milkweed leaves observed in current
+# water year (Oct 2024 and present)
+status <- status %>%
+  mutate(current_wy = ifelse(obsdate >= "2024-10-01", 1, 0)) %>%
+  mutate(ind_date = paste0(individual_id, "_", obsdate)) 
+
+locs <- status %>%
+  filter(current_wy == 1) %>%
+  group_by(site_id, lat, lon, state) %>%
+  summarize(nspp = n_distinct(common_name),
+            nplants = n_distinct(individual_id),
+            nobservers = n_distinct(person_id),
+            # nobs: Number of observations, where an observations is all
+            # data (all phenophases) submitted for a plant on given date
+            nobs = n_distinct(ind_date), 
+            .groups = "keep") %>%
+  data.frame()
+
+# Get state, county boundaries from map, mapdata packages
+state <- map_data("state")
+counties <- map_data("county")
+ttr_states <- subset(state, region %in% c("louisiana", "new mexico", 
+                                          "oklahoma", "texas"))
+ttr_counties <- subset(counties, region %in% c("louisiana", "new mexico", 
+                                               "oklahoma", "texas"))
+
+ggplot(data = ttr_counties, aes(x = long, y = lat, group = group)) +
+  coord_fixed(1.3) +
+  geom_polygon(color = "gray", fill = NA, linewidth = 0.2) + 
+  geom_polygon(data = ttr_states, color = "black", fill = NA) +
+  geom_point(data = locs, aes(x = lon, y = lat, group = NA, size = nplants), 
+             color = "blue") +
+  labs(size = "No. plants") +
+  guides(size = guide_legend(position = "inside")) +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank(), axis.title.y = element_blank(), 
+        axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+        panel.grid = element_blank(),
+        legend.justification.inside = c(0.05, 0.05))
+
+# Plants monitored this water year --------------------------------------------#
+
+plants <- status %>%
+  filter(current_wy == 1) %>%
+  group_by(common_name, func_type, individual_id, site_id, state) %>%
+  summarize(nvisits = n_distinct(obsdate),
+            nobservers = n_distinct(person_id),
+            .groups = "keep") %>%
+  data.frame()
+
+plantspp <- plants %>%
+  group_by(common_name, func_type) %>%
+  summarize(nplants = n(),
+            nsites = n_distinct(site_id),
+            nplants_LA = sum(state == "LA"),
+            nplants_NM = sum(state == "NM"),
+            nplants_OK = sum(state == "OK"),
+            nplants_TX = sum(state == "TX"),
+            mean_no_visits = round(mean(nvisits), 1),
+            .groups = "keep") %>%
+  data.frame() %>%
+  arrange(func_type, desc(nplants))
+
+# Observers submitting data this water year -----------------------------------#
+
+# Why are there some negative person_ids? (associated with NEON).
+# Remove them from summary? Some make observations in two states.
+
+observer_spp <- status %>%
+  filter(current_wy == 1) %>%
+  group_by(person_id, common_name) %>%
+  summarize(nplants = n_distinct(individual_id),
+            nvisits = n_distinct(ind_date),
+            .groups = "keep") %>%
+  data.frame()
+
+observers <- observer_spp %>%
+  group_by(person_id) %>%
+  summarize(nspp = n_distinct(common_name),
+            totalplants = sum(nplants),
+            plants_per_spp = round(mean(nplants), 2),
+            totalvisits = sum(nvisits)) %>%
+  data.frame()
+
+# Considering an observer different in different state
+observers_state <- status %>%
+  filter(current_wy == 1) %>%
+  mutate(observer = paste0(state, person_id)) %>%
+  group_by(observer, state, common_name) %>%
+  summarize(nplants = n_distinct(individual_id),
+            nvisits = n_distinct(ind_date),
+            .groups = "keep") %>%
+  data.frame() %>%
+  group_by(observer, state) %>%
+  summarize(nspp = n_distinct(common_name),
+            totalplants = sum(nplants),
+            plants_per_spp = round(mean(nplants), 2),
+            totalvisits = sum(nvisits),
+            .groups = "keep") %>%
+  data.frame()
+
+observers_state_s <- observer_state %>%
+  group_by(state) %>%
+  summarize(n_observers = n_distinct(observer),
+            spp_per_obs_mn = round(mean(nspp), 2),
+            spp_per_obs_max = max(nspp),
+            plants_per_obs_mn = round(mean(totalplants), 2),
+            plants_per_obs_max = max(totalplants),
+            plants_per_spp_mn = round(mean(plants_per_spp), 2),
+            plants_per_spp_max = max(plants_per_spp)) %>%
+  data.frame()
+observers_state_s
+
+# Histograms
+obs_spp_bar <- count(observers, nspp)
+p_nspp <- ggplot(obs_spp_bar) +
+  geom_col(aes(x = nspp, y = n), width = 0.75, fill = "steelblue3") +
+  scale_x_continuous(breaks = seq(min(obs_spp_bar$nspp), max(obs_spp_bar$nspp))) +
+  labs(x = "Number of species each observer monitored",
+       y = "Number of observers") +
+  theme_bw()
+p_nspp
+
+obs_plants_bar <- count(observer_spp, nplants)
+p_plantsperspp <- ggplot(obs_plants_bar) +
+  geom_col(aes(x = nplants, y = n), width = 0.75, fill = "steelblue3") +
+  scale_x_continuous(breaks = seq(min(obs_plants_bar$nplants), 
+                                  max(obs_plants_bar$nplants))) +
+  labs(x = "Number of plants per species",
+       y = "Number of observer-species combinations") +
+  theme_bw()
+p_plantsperspp
+
+
+# Evaluating observation frequency (no before first yes) ---------------------#
 
 # Focusing on observations made this water year (1 Oct 2024 - present), so we
 # can download individual phenometrics data through rnpn
@@ -537,10 +668,124 @@ if (!file.exists(ip_filename) | update_data == TRUE) {
 
 ip <- read.csv(ip_filename)
 
+# Will look at observations from:
+# 1 Nov 2024 - present (since that'll allow for first yeses with prior no within 30 days) 
+# and for comparison: 1 Nov 2023 - 30 Sep 2024
 
-# Summary of data collected ---------------------------------------------------#
+ip <- ip %>%
+  # Create "season" (Nov 2024 - April 2025 = 2025)
+  mutate(yes_date = parse_date_time(paste(first_yes_year, first_yes_doy),
+                                    orders = "Y j"),
+         yes_month = month(yes_date),
+         season = case_when(
+           yes_month %in% 11:12 ~ first_yes_year + 1,
+           yes_month %in% 1:9 ~ first_yes_year,
+           .default = NA))
+# check
+# count(ip, first_yes_year, yes_month, season)
 
-# Map (just for 2025? both years?)
-# Species (table or map or both) - organize by year and functional type?
-# Number of observers (though not everyone may be associated with TTR)
+# Proportion of first yeses that are preceded by a prior no within X days, 
+# by phenophase and season
+obsfreq_php <- ip %>%
+  filter(!is.na(season)) %>%
+  mutate(php = factor(php, levels = c("flower", "open flower", "fruit", 
+                                      "ripe fruit", "leaves"))) %>%
+  group_by(season, php) %>%
+  summarize(nobs = n(),
+            nobs3 = sum(!is.na(prior_no) & prior_no <= 3),
+            nobs7 = sum(!is.na(prior_no) & prior_no <= 7),
+            nobs14 = sum(!is.na(prior_no) & prior_no <= 14),
+            nobs30 = sum(!is.na(prior_no) & prior_no <= 30),
+            .groups = "keep") %>%
+  mutate(prop3 = round(nobs3/nobs, 2),
+         prop7 = round(nobs7/nobs, 2),
+         prop14 = round(nobs14/nobs, 2),
+         prop30 = round(nobs30/nobs, 2)) %>%
+  data.frame()
+obsfreq_php
 
+# Make a bar chart for this (minus milkweed leaf observations because few of them)
+obsfreq_phpl <- ip %>%
+  filter(!is.na(season)) %>%
+  filter(php != "leaves") %>%
+  mutate(php = factor(php, levels = c("flower", "open flower", 
+                                      "fruit", "ripe fruit"))) %>%
+  group_by(season, php) %>%
+  summarize(nobs03 = sum(!is.na(prior_no) & prior_no %in% 1:3),
+            nobs07 = sum(!is.na(prior_no) & prior_no %in% 4:7),
+            nobs14 = sum(!is.na(prior_no) & prior_no %in% 8:14),
+            nobs30 = sum(!is.na(prior_no) & prior_no %in% 15:30),
+            nobs99 = sum((!is.na(prior_no) & prior_no > 30) | is.na(prior_no)),
+            .groups = "keep") %>%
+  pivot_longer(cols = nobs03:nobs99,
+               names_to = "cat",
+               values_to = "nobs") %>%
+  data.frame()
+obsfreq_phpl
+
+ggplot(obsfreq_phpl) +
+  geom_bar(aes(x = php, y = nobs, fill = cat),
+           position = "stack",
+           stat = "identity") +
+  scale_fill_manual(values = c("#7fc97f", "#beaed4", "#fdc086",
+                               "#ffff99", "#386cb0"),
+                    labels = c("1-3 days", "4-7 days", "8-14 days",
+                               "15-30 days", ">30 days")) +
+  facet_grid( ~ season) +
+  labs(x = "Phenophase", y = 'Number of first "yes" observations',
+       fill = 'Prior "no"') +
+  theme_bw()
+
+# Proportion of first yeses that are preceded by a prior no within X days, 
+# by species and season
+obsfreq_spp <- ip %>%
+  filter(!is.na(season)) %>%
+  group_by(common_name, season) %>%
+  summarize(nobs = n(),
+            nobs3 = sum(!is.na(prior_no) & prior_no <= 3),
+            nobs7 = sum(!is.na(prior_no) & prior_no <= 7),
+            nobs14 = sum(!is.na(prior_no) & prior_no <= 14),
+            nobs30 = sum(!is.na(prior_no) & prior_no <= 30),
+            .groups = "keep") %>%
+  mutate(prop3 = round(nobs3/nobs, 2),
+         prop7 = round(nobs7/nobs, 2),
+         prop14 = round(nobs14/nobs, 2),
+         prop30 = round(nobs30/nobs, 2)) %>%
+  data.frame()
+obsfreq_spp %>% filter(nobs >= 10)
+
+# Make a bar chart for this
+# Only using species that had at least 10 first yeses in one of the years:
+spp10 <- unique(obsfreq_spp$common_name[obsfreq_spp$nobs >= 10])
+obsfreq_sppl <- ip %>%
+  filter(!is.na(season)) %>%
+  filter(php != "leaves") %>%
+  filter(common_name %in% spp10) %>%
+  mutate(common_name = factor(common_name)) %>%
+  group_by(season, common_name) %>%
+  summarize(nobs03 = sum(!is.na(prior_no) & prior_no %in% 1:3),
+            nobs07 = sum(!is.na(prior_no) & prior_no %in% 4:7),
+            nobs14 = sum(!is.na(prior_no) & prior_no %in% 8:14),
+            nobs30 = sum(!is.na(prior_no) & prior_no %in% 15:30),
+            nobs99 = sum((!is.na(prior_no) & prior_no > 30) | is.na(prior_no)),
+            .groups = "keep") %>%
+  pivot_longer(cols = nobs03:nobs99,
+               names_to = "cat",
+               values_to = "nobs") %>%
+  data.frame()
+obsfreq_sppl
+
+ggplot(obsfreq_sppl) +
+  geom_bar(aes(x = common_name, y = nobs, fill = cat),
+           position = "stack",
+           stat = "identity") +
+  scale_fill_manual(values = c("#7fc97f", "#beaed4", "#fdc086",
+                               "#ffff99", "#386cb0"),
+                    labels = c("1-3 days", "4-7 days", "8-14 days",
+                               "15-30 days", ">30 days")) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+  facet_grid(rows = vars(season)) +
+  labs(x = "Species", y = 'Number of first "yes" observations',
+       fill = 'Prior "no"') +
+  theme_bw() +
+  theme(legend.position = "bottom")
