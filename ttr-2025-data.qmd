@@ -1,20 +1,21 @@
 ---
-title: "Time to Restore data - 2025"
+title: "Time to Restore - 2025 data"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 author: "Erin Zylstra"
 execute: 
-  echo: false
-format: 
+  error: false
+  warning: false
+  message: false
+format:
   html:
     embed-resources: true
-    code-fold: true
     fig-cap-location: top
     page-layout: full
 editor: visual
 ---
 
 ```{r}
-#| output: false
+#| echo: false
 
 require(rnpn)
 require(lubridate)
@@ -26,6 +27,7 @@ require(map)
 require(maptiles)
 require(tidyterra)
 require(dplyr)
+require(magick)
 
 # Logical indicating whether to re-download data
 update_data <- FALSE
@@ -51,8 +53,7 @@ Used list of priority species based on: TimeToRestore_AllPrioritySpecies_2024 [g
 -   Using the common name listed in NPN database for *Sambucus nigra* and *Passiflora incarnata*, which were each listed twice in the googlesheet under two different common names.
 
 ```{r priority-spp}
-#| echo: false
-#| output: false
+#| code-fold: true
 
 # Load list of priority species
 spp_list <- read.csv("data/ttr-priorityspecies-20250402.csv", 
@@ -101,10 +102,10 @@ This left us with `r nrow(spp_list)` priority species.
 
 ### Downloading status-intensity data
 
-Used rnpn package to download status and intensity data for priority species in Louisiana, New Mexico, Oklahoma, and Texas from 1 October 2023 through the present day. Downloaded observations of 4 phenophases: flowers or flower buds (flower), open flowers, fruits, and ripe fruits. Since leaves on milkweed plants may be important for monarch eggs and catepillars, we also downloaded observations of the leaves phenophase for the `r length(str_detect(spp_list$common_name, "milkweed"))` species of milkweed on the priority list. After downloading the data, we appended information about intensity categories, and calculated approximate midpoint values for each intensity category in the status-intensity dataset.
+Used rnpn package to download status and intensity data for priority species in Louisiana, New Mexico, Oklahoma, and Texas from 1 October 2023 through the present day. Downloaded observations of 4 phenophases: flowers or flower buds (flower), open flowers, fruits, and ripe fruits. Since leaves on milkweed plants may be important for monarch eggs and catepillars, we also downloaded observations of the leaves phenophase for the `r sum(str_detect(spp_list$common_name, "milkweed"))` species of milkweed on the priority list. After downloading the data, we appended information about intensity categories.
 
 ```{r download}
-#| echo: false
+#| code-fold: true
 #| output: false
 
 # First, check that all species have these 4 phenophases
@@ -207,12 +208,10 @@ status <- read.csv(data_filename) %>%
          wy = ifelse(obsdate >= "2024-10-01", 2025, 2024))
 ```
 
-For the purposes of this report, we'll focus on observations submitted in the current water year, from 1 October 2024 - `r format(max(status$obsdate), "%d %B %Y")`. At times, we will compare current water-year data with data collected during the previous water year (October 2023 - September 2024), while noting that we are only partially through the current water year.
+For the purposes of this report, we focused on observations submitted in the current water year, from 1 October 2024 - `r format(max(status$obsdate), "%d %B %Y")`, the last date that observations were available. Throughout this report, we often compared current water-year data with data collected during the previous water year (October 2023 - September 2024), while keeping in mind that we are only partially through the current water year.
 
 ```{r intensities}
-#| echo: false
 #| code-fold: true
-#| output: false
 
 # Download information about intensity categories
 ic <- npn_abundance_categories() %>% data.frame()
@@ -282,54 +281,11 @@ status <- status %>%
   select(-intensity_category_id)
 ```
 
-```{r duplicates}
-#| echo: false
-#| code-fold: false
-#| output: false
-
-# Duplicate by same observer: all years (2023-2025)
-dups <- status %>%
-  group_by(person_id, individual_id, obsdate, yr, phenophase_id, 
-           phenophase_status, intensity) %>%
-  summarize(nobs = n(), .groups = "keep") %>%
-  data.frame() %>%
-  count(nobs)
-# dups
-n_dups <- sum(dups$n * (dups$nobs - 1))
-n_dups_percent <- round(n_dups / nrow(status) * 100, 2) 
-
-# Duplicate by same observer: 2025 only
-dups25 <- status %>%
-  filter(yr == 2025) %>%
-  group_by(person_id, individual_id, obsdate, yr, phenophase_id, 
-           phenophase_status, intensity) %>%
-  summarize(nobs = n(), .groups = "keep") %>%
-  data.frame() %>%
-  count(nobs)
-# dups25
-n_dups25 <- sum(dups25$n * (dups25$nobs - 1))
-n_dups25_percent <- round(n_dups25 / nrow(status[status$yr == 2025,]) * 100, 2)
-
-# Removing duplicates (will cause problems later)
-status <- status %>% distinct(across(-observation_id))
-
-# Duplicate by multiple observers: all years
-dups2 <- status %>%
-  group_by(individual_id, obsdate, phenophase_id, phenophase_status,
-           intensity) %>%
-  summarize(nobs = n(), .groups = "keep") %>%
-  data.frame() %>%
-  count(nobs)
-dups2
-n_dups2 <- sum(dups2$n * (dups2$nobs - 1))
-n_dups2_percent <- round(n_dups2 / nrow(status) * 100, 2)
-```
-
 ### Identifying issues related to reported intensity values
 
 ```{r intensity-probs}
+#| code-fold: false
 #| echo: false
-#| code-fold: true
 
 # Instances where there is an intensity value but phenophase status is not yes?
 status <- status %>%
@@ -370,12 +326,15 @@ There was `r sum(int_no$wy == 2025)` instance since October 2024 where an observ
 ```{r}
 #| label: intensity-no-postive-status
 #| tbl-cap: Observations with an intensity value, where phenophase state was not positive.
+#| code-fold: false
+#| echo: false
 
 knitr::kable(int_no %>% 
-               select(site_name, state, common_name, php, phenophase_status, intensity_value,
+               select(site_name, state, common_name, obsdate, php, phenophase_status, intensity_value,
                       obsdate),
-             col.names = c("Site name", "State", "Species", "Phenophase", "Status", "Intensity",
-                           "Observation date"))
+             col.names = c("Site name", "State", "Species", "Observation date",
+                           "Phenophase", "Status", "Intensity"),
+             align = c("l", "l", "l", "l", "l", "c", "l"))
 ```
 
 \
@@ -385,12 +344,14 @@ To explore whether observers were counting the number of flowers rather than the
 ```{r}
 #| label: flowers-high
 #| tbl-cap: Observations of flowers with high reported intensity values by water year.
+#| code-fold: false
+#| echo: false
 
 knitr::kable(intensitycat_high %>%
                select(common_name, php, intensity_value, nhigh_2024,
                       nplants_2024, nhigh_2025, nplants_2025),
-             col.names = c("Species", "Phenophase", "Intensity category", "No. 2024 obs", 
-                           "No. 2024 plants", "No. 2025 obs", "No. 2025 plants"),
+             col.names = c("Species", "Phenophase", "Intensity category", "No. 2024 observations", 
+                           "No. 2024 plants", "No. 2025 observations", "No. 2025 plants"),
              align = c("l", "c", "r", "c", "c", "c", "c"))
 ```
 
@@ -399,7 +360,6 @@ knitr::kable(intensitycat_high %>%
 We wanted to identify when observers provided incompatible status reports for different phenophases. In particular, we identified when observers reported a "no" to flowers but reported a "yes" or "?" to open flowers. Similarly, we identified when observers reported a "no" to fruits but reported a "yes" or "?" to ripe fruits. We also identified when observers reported a "?" to flowers but reported a "yes" to open flowers, and when observers reported a "?" to fruits but reported a "yes" to ripe fruits.
 
 ```{r phenophase-inconsistencies}
-#| echo: false
 #| code-fold: true
 
 # To look at this, can't have more than one observation of a plant per person
@@ -528,8 +488,7 @@ knitr::kable(fruit_probs_short,
 
 ### Summary of sites monitored
 
-```{r sites}
-#| echo: false
+```{r sites1}
 #| code-fold: true
 
 # Plot locations where flowering/fruiting or milkweed leaves observed in current
@@ -565,6 +524,12 @@ locs_by_state <- status %>%
             nobs = n_distinct(ind_date)) %>%
   data.frame() %>%
   left_join(locs_by_state_int, by = "state")
+```
+
+```{r sites2}
+#| code-fold: false
+#| echo: false
+#| eval: false
 
 # Get state, county boundaries from map package
 state <- map_data("state")
@@ -578,9 +543,9 @@ map <- ggplot(data = ttr_counties, aes(x = long, y = lat, group = group)) +
   coord_fixed(1.3) +
   geom_polygon(color = "gray", fill = NA, linewidth = 0.2) + 
   geom_polygon(data = ttr_states, color = "black", fill = NA) +
-  geom_point(data = locs, aes(x = lon, y = lat, group = NA, size = nplants), 
+  geom_point(data = locs, aes(x = lon, y = lat, group = NA, size = nspp), 
              color = "blue") +
-  labs(size = "No. plants") +
+  labs(size = "No. species") +
   guides(size = guide_legend(position = "inside")) +
   theme_bw() +
   theme(axis.title.x = element_blank(), axis.text.x = element_blank(), 
@@ -590,161 +555,197 @@ map <- ggplot(data = ttr_counties, aes(x = long, y = lat, group = group)) +
         legend.justification.inside = c(0.05, 0.05))
 
 map_file <- "ttr-2025-figs/ttr-2025-map.png"
-if (!file.exists(map_file) | update_data == TRUE) {
   ggsave(filename = map_file,
          plot = map,
          width = 6,
+         height = 4,
          units = "in",
          dpi = 600)
-}
 
 # Create state-level static maps
+  locs_sf <- st_as_sf(locs,
+                      coords = c("lon", "lat"),
+                      crs = "epsg:4269")
+  locs_la <- locs_sf %>%
+    filter(state == "LA")
+  locs_nm <- locs_sf %>%
+    filter(state == "NM")
+  locs_ok <- locs_sf %>%
+    filter(state == "OK")
+  locs_tx <- locs_sf %>%
+    filter(state == "TX")
 
-  # locs_sf <- st_as_sf(locs,
-  #                     coords = c("lon", "lat"), 
-  #                     crs = "epsg:4269")
-  # locs_la <- locs_sf %>%
-  #   filter(state == "LA")
-  # locs_nm <- locs_sf %>%
-  #   filter(state == "NM")
-  # locs_ok <- locs_sf %>%
-  #   filter(state == "OK")
-  # locs_tx <- locs_sf %>%
-  #   filter(state == "TX")
-  # 
-  # # Louisiana
-  # la_bounds <- c(-94.5, 28.75 , -88, 33)
-  # la <- matrix(la_bounds, 2, byrow = TRUE) %>%
-  #   st_multipoint() %>%
-  #   st_sfc(crs = 4269) %>% 
-  #   st_transform(3857) %>%
-  #   get_tiles(provider = "OpenStreetMap", zoom = 7, crop = TRUE)
-  #   
-  # la_map <- ggplot() +
-  #   geom_spatraster_rgb(data = la) +
-  #   geom_sf(data = locs_la,
-  #           aes(size = nspp),
-  #           show.legend = "point",
-  #           color = "blue",
-  #           alpha = 0.5) +
-  #   scale_size_continuous(range = c(2, 5)) +
-  #   labs(size = "No. species") +
-  #   coord_sf(crs = 3857, expand = FALSE, ylim = st_bbox(la)[c(2, 4)]) +
-  #   theme(axis.text = element_blank(),
-  #         axis.ticks = element_blank())
-  # 
-  # la_ar <- (la_bounds[3] - la_bounds[1]) / (la_bounds[4] - la_bounds[2])
-  # ggsave("ttr-2025-figs/LA-map.png",
-  #        la_map,
-  #        height = 6,
-  #        width = (6 * la_ar) + 0.5,
-  #        units = "in",
-  #        dpi = 600)
-  # 
-  # # New Mexico
-  # nm_bounds <- c(-109.5, 31, -102.5, 37.5)
-  # nm <- matrix(nm_bounds, 2, byrow = TRUE) %>%
-  #   st_multipoint() %>%
-  #   st_sfc(crs = 4269) %>% 
-  #   st_transform(3857) %>%
-  #   get_tiles(provider = "OpenStreetMap", zoom = 7, crop = TRUE)
-  # 
-  # nm_map <- ggplot() +
-  #   geom_spatraster_rgb(data = nm) +
-  #   geom_sf(data = locs_nm,
-  #           aes(size = nspp),
-  #           show.legend = "point",
-  #           color = "blue",
-  #           alpha = 0.5) +
-  #   scale_size_continuous(range = c(2, 5)) +
-  #   labs(size = "No. species") +
-  #   coord_sf(crs = 3857, expand = FALSE, ylim = st_bbox(nm)[c(2, 4)]) +
-  #   theme(axis.text = element_blank(),
-  #         axis.ticks = element_blank())
-  # 
-  # nm_ar <- (nm_bounds[3] - nm_bounds[1]) / (nm_bounds[4] - nm_bounds[2])
-  # ggsave("ttr-2025-figs/NM-map.png",
-  #        nm_map,
-  #        height = 6,
-  #        width = (6 * nm_ar) + 0.5,
-  #        units = "in",
-  #        dpi = 600)
-  # 
-  # # Oklahoma
-  # ok_bounds <- c(-103.5, 33.5, -94, 37.5)
-  # ok <- matrix(ok_bounds, 2, byrow = TRUE) %>%
-  #   st_multipoint() %>%
-  #   st_sfc(crs = 4269) %>% 
-  #   st_transform(3857) %>%
-  #   get_tiles(provider = "OpenStreetMap", zoom = 7, crop = TRUE)
-  # 
-  # ok_map <- ggplot() +
-  #   geom_spatraster_rgb(data = ok) +
-  #   geom_sf(data = locs_ok,
-  #           aes(size = nspp),
-  #           show.legend = "point",
-  #           color = "blue",
-  #           alpha = 0.5) +
-  #   scale_size_continuous(range = c(2, 5)) +
-  #   labs(size = "No. species") +
-  #   coord_sf(crs = 3857, expand = FALSE, ylim = st_bbox(ok)[c(2, 4)]) +
-  #   theme(axis.text = element_blank(),
-  #         axis.ticks = element_blank())
-  # 
-  # ok_ar <- (ok_bounds[3] - ok_bounds[1]) / (ok_bounds[4] - ok_bounds[2])
-  # ggsave("ttr-2025-figs/OK-map.png",
-  #        ok_map,
-  #        height = 6,
-  #        width = (6 * ok_ar) + 0.5,
-  #        units = "in",
-  #        dpi = 600)
-  # 
-  # # Texas
-  # tx_bounds <- c(-106.5, 25.5, -93.5, 36.5)
-  # tx <- matrix(tx_bounds, 2, byrow = TRUE) %>%
-  #   st_multipoint() %>%
-  #   st_sfc(crs = 4269) %>% 
-  #   st_transform(3857) %>%
-  #   get_tiles(provider = "OpenStreetMap", zoom = 6, crop = TRUE)
-  # 
-  # tx_map <- ggplot() +
-  #   geom_spatraster_rgb(data = tx, maxcell = Inf) +
-  #   geom_sf(data = locs_tx,
-  #           aes(size = nspp),
-  #           show.legend = "point",
-  #           color = "blue",
-  #           alpha = 0.5) +
-  #   scale_size_continuous(range = c(2, 5)) +
-  #   labs(size = "No. species") +
-  #   coord_sf(crs = 3857, expand = FALSE, ylim = st_bbox(tx)[c(2, 4)]) +
-  #   theme(axis.text = element_blank(),
-  #         axis.ticks = element_blank())
-  # 
-  # tx_ar <- (tx_bounds[3] - tx_bounds[1]) / (tx_bounds[4] - tx_bounds[2])
-  # ggsave("ttr-2025-figs/TX-map.png",
-  #        tx_map,
-  #        height = 6,
-  #        width = (6 * tx_ar) + 0.5,
-  #        units = "in",
-  #        dpi = 600)
+  # Louisiana
+  la_bounds <- c(-94.5, 28.75 , -88, 33)
+  la <- matrix(la_bounds, 2, byrow = TRUE) %>%
+    st_multipoint() %>%
+    st_sfc(crs = 4269) %>%
+    st_transform(3857) %>%
+    get_tiles(provider = "OpenStreetMap", zoom = 7, crop = TRUE)
 
+  la_map <- ggplot() +
+    geom_spatraster_rgb(data = la) +
+    geom_sf(data = locs_la,
+            aes(size = nspp),
+            show.legend = "point",
+            color = "blue",
+            alpha = 0.5) +
+    scale_size_continuous(range = c(2, 5)) +
+    labs(size = "No. species") +
+    coord_sf(crs = 3857, expand = FALSE, ylim = st_bbox(la)[c(2, 4)]) +
+    theme(axis.text = element_blank(),
+          axis.ticks = element_blank())
+
+  la_ar <- (la_bounds[3] - la_bounds[1]) / (la_bounds[4] - la_bounds[2])
+  ggsave("ttr-2025-figs/LA-map.png",
+         la_map,
+         height = 6,
+         width = (6 * la_ar) + 0.5,
+         units = "in",
+         dpi = 600)
+
+  # New Mexico
+  nm_bounds <- c(-109.5, 31, -102.5, 37.5)
+  nm <- matrix(nm_bounds, 2, byrow = TRUE) %>%
+    st_multipoint() %>%
+    st_sfc(crs = 4269) %>%
+    st_transform(3857) %>%
+    get_tiles(provider = "OpenStreetMap", zoom = 7, crop = TRUE)
+
+  nm_map <- ggplot() +
+    geom_spatraster_rgb(data = nm) +
+    geom_sf(data = locs_nm,
+            aes(size = nspp),
+            show.legend = "point",
+            color = "blue",
+            alpha = 0.5) +
+    scale_size_continuous(range = c(2, 5)) +
+    labs(size = "No. species") +
+    coord_sf(crs = 3857, expand = FALSE, ylim = st_bbox(nm)[c(2, 4)]) +
+    theme(axis.text = element_blank(),
+          axis.ticks = element_blank())
+
+  nm_ar <- (nm_bounds[3] - nm_bounds[1]) / (nm_bounds[4] - nm_bounds[2])
+  ggsave("ttr-2025-figs/NM-map.png",
+         nm_map,
+         height = 6,
+         width = (6 * nm_ar) + 0.5,
+         units = "in",
+         dpi = 600)
+
+  # Oklahoma
+  ok_bounds <- c(-103.5, 33.5, -94, 37.5)
+  ok <- matrix(ok_bounds, 2, byrow = TRUE) %>%
+    st_multipoint() %>%
+    st_sfc(crs = 4269) %>%
+    st_transform(3857) %>%
+    get_tiles(provider = "OpenStreetMap", zoom = 7, crop = TRUE)
+
+  ok_map <- ggplot() +
+    geom_spatraster_rgb(data = ok) +
+    geom_sf(data = locs_ok,
+            aes(size = nspp),
+            show.legend = "point",
+            color = "blue",
+            alpha = 0.5) +
+    scale_size_continuous(range = c(2, 5)) +
+    labs(size = "No. species") +
+    coord_sf(crs = 3857, expand = FALSE, ylim = st_bbox(ok)[c(2, 4)]) +
+    theme(axis.text = element_blank(),
+          axis.ticks = element_blank())
+
+  ok_ar <- (ok_bounds[3] - ok_bounds[1]) / (ok_bounds[4] - ok_bounds[2])
+  ggsave("ttr-2025-figs/OK-map.png",
+         ok_map,
+         height = 6,
+         width = (6 * ok_ar) + 0.5,
+         units = "in",
+         dpi = 600)
+
+  # Texas
+  tx_bounds <- c(-106.5, 25.5, -93.5, 36.5)
+  tx <- matrix(tx_bounds, 2, byrow = TRUE) %>%
+    st_multipoint() %>%
+    st_sfc(crs = 4269) %>%
+    st_transform(3857) %>%
+    get_tiles(provider = "OpenStreetMap", zoom = 6, crop = TRUE)
+
+  tx_map <- ggplot() +
+    geom_spatraster_rgb(data = tx, maxcell = Inf) +
+    geom_sf(data = locs_tx,
+            aes(size = nspp),
+            show.legend = "point",
+            color = "blue",
+            alpha = 0.5) +
+    scale_size_continuous(range = c(2, 5)) +
+    labs(size = "No. species") +
+    coord_sf(crs = 3857, expand = FALSE, ylim = st_bbox(tx)[c(2, 4)]) +
+    theme(axis.text = element_blank(),
+          axis.ticks = element_blank())
+
+  tx_ar <- (tx_bounds[3] - tx_bounds[1]) / (tx_bounds[4] - tx_bounds[2])
+  ggsave("ttr-2025-figs/TX-map.png",
+         tx_map,
+         height = 6,
+         width = (6 * tx_ar) + 0.5,
+         units = "in",
+         dpi = 600)
 ```
 
-```{r fig.width = 8}
-#| label: map
+```{r}
+#| label: state4_map
 #| fig-cap: Locations of sites where priority species were monitored between October 2024 and present. 
 #| echo: false
+#| fig.width: 8
 
+map <- magick::image_read("ttr-2025-figs/ttr-2025-map.png") %>%
+  magick::image_ggplot(interpolate = TRUE)
 map
 ```
 
-![Locations of sites in Louisiana where priority species were monitored between October 2024 and present.](ttr-2025-figs/LA-map.png)
+```{r}
+#| label: la_map
+#| fig-cap: Locations of sites in Louisiana where priority species were monitored between October 2024 and present. 
+#| echo: false
+#| fig.width: 10
 
-![Locations of sites in New Mexico where priority species were monitored between October 2024 and present.](ttr-2025-figs/NM-map.png)
+la_map <- magick::image_read("ttr-2025-figs/LA-map.png") %>%
+  magick::image_ggplot(interpolate = TRUE)
+la_map
+```
 
-![Locations of sites in Oklahoma where priority species were monitored between October 2024 and present.](ttr-2025-figs/OK-map.png)
+```{r}
+#| label: nm_map
+#| fig-cap: Locations of sites in New Mexico where priority species were monitored between October 2024 and present. 
+#| echo: false
+#| fig.width: 10
 
-![Locations of sites in Texas where priority species were monitored between October 2024 and present.](ttr-2025-figs/TX-map.png)
+nm_map <- magick::image_read("ttr-2025-figs/NM-map.png") %>%
+  magick::image_ggplot(interpolate = TRUE)
+nm_map
+```
+
+```{r}
+#| label: ok_map
+#| fig-cap: Locations of sites in Oklahoma where priority species were monitored between October 2024 and present. 
+#| echo: false
+#| fig.width: 10
+
+ok_map <- magick::image_read("ttr-2025-figs/OK-map.png") %>%
+  magick::image_ggplot(interpolate = TRUE)
+ok_map
+```
+
+```{r}
+#| label: tx_map
+#| fig-cap: Locations of sites in Texas where priority species were monitored between October 2024 and present. 
+#| echo: false
+#| fig.width: 10
+
+tx_map <- magick::image_read("ttr-2025-figs/TX-map.png") %>%
+  magick::image_ggplot(interpolate = TRUE)
+tx_map
+```
 
 ```{r}
 #| label: sites-table
@@ -756,14 +757,13 @@ knitr::kable(locs_by_state,
                            "Mean no. species per site", "Mean no. plants per site", 
                            "Mean no. of observations per site"),
              align = "c")
-
 ```
 
 ### Summary of species monitored
 
 ```{r plants}
+#| code-fold: false
 #| echo: false
-#| code-fold: true
 
 plants <- status %>%
   filter(wy == 2025) %>%
@@ -806,7 +806,7 @@ knitr::kable(plantspp %>%
 
 ```{r observers}
 #| echo: false
-#| code-fold: true
+#| code-fold: false
 
 observer_spp <- status %>%
   filter(wy == 2025) %>%
@@ -911,20 +911,24 @@ knitr::kable(observers_table,
 
 \
 
-```{r fig.height = 3, fig.width = 8}
+```{r}
 #| label: spp-per-observer
 #| fig-cap: Number of species each observer monitored since October 2024.
 #| echo: false
+#| fig.height: 3
+#| fig.width: 8
 
 p_nspp
 ```
 
 \
 
-```{r fig.height = 3, fig.width = 8}
+```{r}
 #| label: plants-per-spp
 #| fig-cap: Number of plants per species that observers monitored since October 2024
 #| echo: false
+#| fig.height: 3
+#| fig.width: 8
 
 p_plantsperspp
 ```
@@ -934,7 +938,6 @@ p_plantsperspp
 To evaluate observation frequency, we downloaded individual phenometrics data for priority species from 1 October 2023 through the present day.
 
 ```{r download-ip-data}
-#| echo: false
 #| code-fold: true
 
 # Download individual phenometrics data
@@ -1006,10 +1009,9 @@ if (!file.exists(ip_filename) | update_data == TRUE) {
 ip <- read.csv(ip_filename)
 ```
 
-For these summaries, we will evaluate observation frequency by classifying flowering and fruiting observations based on the time elapsed between a "no" observation and the first "yes" observation of a given phenophase. Here, we'll compare first yeses that were submitted between 1 November 2024 and the present (\~2025 water year) with first yeses that were submitted between 1 November 2023 and 30 September 2024 (\~2024 water year).
+For these summaries, we evaluated observation frequency by classifying flowering and fruiting observations based on the time elapsed between a "no" observation and the first "yes" observation of a given phenophase. Here, we compared first yeses that were submitted between 1 November 2024 and the present (\~2025 water year) with first yeses that were submitted between 1 November 2023 and 30 September 2024 (\~2024 water year).
 
 ```{r classifying-prior-nos}
-#| echo: false
 #| code-fold: true
 
 ip <- ip %>%
@@ -1131,20 +1133,24 @@ freq_by_spp <- ggplot(obsfreq_sppl) +
 
 \
 
-```{r fig.height = 5, fig.width = 10}
+```{r}
 #| label: freq-by-php
 #| fig-cap: Proportion of first "yes" observations that were associated with a prior "no" with a given number of days, grouped by phenophase. 2024 = November 2023 - September 2024. 2025 = November 2024 - present.
 #| echo: false
+#| fig.height: 5
+#| fig.width: 10
 
 freq_by_php
 ```
 
 \
 
-```{r fig.height = 5, fig.width = 10}
+```{r}
 #| label: freq-by-spp
 #| fig-cap: Proportion of first "yes" observations that were associated with a prior "no" with a given number of days, grouped by species. We excluded species with fewer than 10 "yes" observations in both water years. 2024 = November 2023 - September 2024. 2025 = November 2024 - present.
 #| echo: false
+#| fig.height: 5
+#| fig.width: 10
 
 freq_by_spp
 ```
