@@ -4832,6 +4832,550 @@ vertical-align: -.125em;
 </div>
 </div>
 </section>
+<section id="plant-information" class="level3">
+<h3 class="anchored" data-anchor-id="plant-information">Plant information</h3>
+<p>We also extracted information that observers provided about individual plants and summarized this information by species.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>ids <span class="ot">&lt;-</span> <span class="fu">unique</span>(status<span class="sc">$</span>individual_id)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>idsl <span class="ot">&lt;-</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(ids) <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>ids_call <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">&quot;individual_id[&quot;</span>, idsl, <span class="st">&quot;]=&quot;</span>, ids, <span class="st">&quot;&amp;&quot;</span>, <span class="at">collapse =</span> <span class="st">&quot;&quot;</span>)</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>ids_call <span class="ot">&lt;-</span> <span class="fu">str_sub</span>(ids_call, <span class="at">end =</span> <span class="sc">-</span><span class="dv">2</span>)</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>url_base <span class="ot">&lt;-</span> <span class="st">&quot;https://services.usanpn.org/npn_portal/individuals/getPlantDetails.json?&quot;</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>url <span class="ot">&lt;-</span> <span class="fu">paste0</span>(url_base, ids_call)</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Get information about each plant from API</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>json_data <span class="ot">&lt;-</span> <span class="fu">read_json</span>(</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">path =</span> url, </span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">simplifyVector =</span> <span class="cn">TRUE</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> json_data <span class="sc">%&gt;%</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span><span class="fu">c</span>(comment, plant_image_url, plant_image_upload_date))</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Append information about species to the plant data</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>status <span class="ot">&lt;-</span> status <span class="sc">%&gt;%</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(<span class="fu">select</span>(nn_spp, species_id, common_name, scientific_name), </span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>            <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;common_name&quot;</span>, <span class="st">&quot;species_id&quot;</span>))</span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> df <span class="sc">%&gt;%</span></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(<span class="fu">distinct</span>(status, individual_id, common_name), <span class="at">by =</span> <span class="st">&quot;individual_id&quot;</span>)</span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Check that all species in status-intensity data appear in plant info df</span></span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a><span class="co"># status$individual_id[!status$individual_id %in% df$individual_id]</span></span>
+<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a><span class="co"># df$individual_id[!df$individual_id %in% status$individual_id]</span></span>
+<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a><span class="co"># ok</span></span>
+<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a><span class="co"># Remove any duplicates (for some reason there are some [~20])</span></span>
+<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">distinct</span>(df)</span>
+<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a><span class="co"># Check that there&#39;s only one row per individual</span></span>
+<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a><span class="co"># length(unique(df$individual_id)); length(ids)</span></span>
+<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-35"><a href="#cb8-35" aria-hidden="true" tabindex="-1"></a><span class="co"># Look at variable structures</span></span>
+<span id="cb8-36"><a href="#cb8-36" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, patch) # 52 yes, rest are blank</span></span>
+<span id="cb8-37"><a href="#cb8-37" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, patch_size) # 45 with value, rest are blank</span></span>
+<span id="cb8-38"><a href="#cb8-38" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, shade_status) # 110 blank</span></span>
+<span id="cb8-39"><a href="#cb8-39" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, wild) # 0 or 1 or blank (110)</span></span>
+<span id="cb8-40"><a href="#cb8-40" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, watered) # 0 or 1 or blank (112)</span></span>
+<span id="cb8-41"><a href="#cb8-41" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, fertilized) # 0 or 1 or blank (123)</span></span>
+<span id="cb8-42"><a href="#cb8-42" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, gender) # Female (1) or Both (36) or blank (247)</span></span>
+<span id="cb8-43"><a href="#cb8-43" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, planting_date) # 225 blank or &quot;--&quot;, rest with mix of year or exact date</span></span>
+<span id="cb8-44"><a href="#cb8-44" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, death_date_observed) # Only 1 value</span></span>
+<span id="cb8-45"><a href="#cb8-45" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, last_date_observed_alive) # Only 1 value</span></span>
+<span id="cb8-46"><a href="#cb8-46" aria-hidden="true" tabindex="-1"></a><span class="co"># count(df, death_reason) # 2 Unknown, rest blank</span></span>
+<span id="cb8-47"><a href="#cb8-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-48"><a href="#cb8-48" aria-hidden="true" tabindex="-1"></a><span class="co"># Summarize by species</span></span>
+<span id="cb8-49"><a href="#cb8-49" aria-hidden="true" tabindex="-1"></a>spp <span class="ot">&lt;-</span> df <span class="sc">%&gt;%</span></span>
+<span id="cb8-50"><a href="#cb8-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(common_name) <span class="sc">%&gt;%</span></span>
+<span id="cb8-51"><a href="#cb8-51" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarize</span>(<span class="at">n_plants =</span> <span class="fu">n</span>(),</span>
+<span id="cb8-52"><a href="#cb8-52" aria-hidden="true" tabindex="-1"></a>            <span class="at">patch_yes =</span> <span class="fu">sum</span>(patch <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb8-53"><a href="#cb8-53" aria-hidden="true" tabindex="-1"></a>            <span class="at">patch_with_size =</span> <span class="fu">sum</span>(patch_size <span class="sc">!=</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-54"><a href="#cb8-54" aria-hidden="true" tabindex="-1"></a>            <span class="at">shade_reported =</span> <span class="fu">sum</span>(shade_status <span class="sc">!=</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-55"><a href="#cb8-55" aria-hidden="true" tabindex="-1"></a>            <span class="at">wild_yes =</span> <span class="fu">sum</span>(wild <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb8-56"><a href="#cb8-56" aria-hidden="true" tabindex="-1"></a>            <span class="at">wild_no =</span> <span class="fu">sum</span>(wild <span class="sc">==</span> <span class="dv">0</span>),</span>
+<span id="cb8-57"><a href="#cb8-57" aria-hidden="true" tabindex="-1"></a>            <span class="at">wild_unk =</span> <span class="fu">sum</span>(wild <span class="sc">==</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-58"><a href="#cb8-58" aria-hidden="true" tabindex="-1"></a>            <span class="at">water_yes =</span> <span class="fu">sum</span>(watered <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb8-59"><a href="#cb8-59" aria-hidden="true" tabindex="-1"></a>            <span class="at">water_no =</span> <span class="fu">sum</span>(watered <span class="sc">==</span> <span class="dv">0</span>),</span>
+<span id="cb8-60"><a href="#cb8-60" aria-hidden="true" tabindex="-1"></a>            <span class="at">water_unk =</span> <span class="fu">sum</span>(watered <span class="sc">==</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-61"><a href="#cb8-61" aria-hidden="true" tabindex="-1"></a>            <span class="at">fert_yes =</span> <span class="fu">sum</span>(fertilized <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb8-62"><a href="#cb8-62" aria-hidden="true" tabindex="-1"></a>            <span class="at">fert_no =</span> <span class="fu">sum</span>(fertilized <span class="sc">==</span> <span class="dv">0</span>),</span>
+<span id="cb8-63"><a href="#cb8-63" aria-hidden="true" tabindex="-1"></a>            <span class="at">fert_unk =</span> <span class="fu">sum</span>(fertilized <span class="sc">==</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-64"><a href="#cb8-64" aria-hidden="true" tabindex="-1"></a>            <span class="at">gender_f =</span> <span class="fu">sum</span>(gender <span class="sc">==</span> <span class="st">&quot;Female&quot;</span>),</span>
+<span id="cb8-65"><a href="#cb8-65" aria-hidden="true" tabindex="-1"></a>            <span class="at">gender_b =</span> <span class="fu">sum</span>(gender <span class="sc">==</span> <span class="st">&quot;Both&quot;</span>),</span>
+<span id="cb8-66"><a href="#cb8-66" aria-hidden="true" tabindex="-1"></a>            <span class="at">gender_unk =</span> <span class="fu">sum</span>(gender <span class="sc">==</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-67"><a href="#cb8-67" aria-hidden="true" tabindex="-1"></a>            <span class="at">planting_date =</span> <span class="fu">sum</span>(planting_date <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">&quot;&quot;</span>, <span class="st">&quot;--&quot;</span>)),</span>
+<span id="cb8-68"><a href="#cb8-68" aria-hidden="true" tabindex="-1"></a>            <span class="at">death_date =</span> <span class="fu">sum</span>(death_date_observed <span class="sc">!=</span> <span class="st">&quot;&quot;</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb8-69"><a href="#cb8-69" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>()</span>
+<span id="cb8-70"><a href="#cb8-70" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb8-71"><a href="#cb8-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-72"><a href="#cb8-72" aria-hidden="true" tabindex="-1"></a>allplants <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb8-73"><a href="#cb8-73" aria-hidden="true" tabindex="-1"></a>  <span class="at">common_name =</span> <span class="st">&quot;All plants&quot;</span>,</span>
+<span id="cb8-74"><a href="#cb8-74" aria-hidden="true" tabindex="-1"></a>  <span class="at">n_plants =</span> <span class="fu">nrow</span>(df),</span>
+<span id="cb8-75"><a href="#cb8-75" aria-hidden="true" tabindex="-1"></a>  <span class="at">patch_yes =</span> <span class="fu">sum</span>(df<span class="sc">$</span>patch <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb8-76"><a href="#cb8-76" aria-hidden="true" tabindex="-1"></a>  <span class="at">patch_with_size =</span> <span class="fu">sum</span>(df<span class="sc">$</span>patch_size <span class="sc">!=</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-77"><a href="#cb8-77" aria-hidden="true" tabindex="-1"></a>  <span class="at">shade_reported =</span> <span class="fu">sum</span>(df<span class="sc">$</span>shade_status <span class="sc">!=</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-78"><a href="#cb8-78" aria-hidden="true" tabindex="-1"></a>  <span class="at">wild_yes =</span> <span class="fu">sum</span>(df<span class="sc">$</span>wild <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb8-79"><a href="#cb8-79" aria-hidden="true" tabindex="-1"></a>  <span class="at">wild_no =</span> <span class="fu">sum</span>(df<span class="sc">$</span>wild <span class="sc">==</span> <span class="dv">0</span>),</span>
+<span id="cb8-80"><a href="#cb8-80" aria-hidden="true" tabindex="-1"></a>  <span class="at">wild_unk =</span> <span class="fu">sum</span>(df<span class="sc">$</span>wild <span class="sc">==</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-81"><a href="#cb8-81" aria-hidden="true" tabindex="-1"></a>  <span class="at">water_yes =</span> <span class="fu">sum</span>(df<span class="sc">$</span>watered <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb8-82"><a href="#cb8-82" aria-hidden="true" tabindex="-1"></a>  <span class="at">water_no =</span> <span class="fu">sum</span>(df<span class="sc">$</span>watered <span class="sc">==</span> <span class="dv">0</span>),</span>
+<span id="cb8-83"><a href="#cb8-83" aria-hidden="true" tabindex="-1"></a>  <span class="at">water_unk =</span> <span class="fu">sum</span>(df<span class="sc">$</span>watered <span class="sc">==</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-84"><a href="#cb8-84" aria-hidden="true" tabindex="-1"></a>  <span class="at">fert_yes =</span> <span class="fu">sum</span>(df<span class="sc">$</span>fertilized <span class="sc">==</span> <span class="dv">1</span>),</span>
+<span id="cb8-85"><a href="#cb8-85" aria-hidden="true" tabindex="-1"></a>  <span class="at">fert_no =</span> <span class="fu">sum</span>(df<span class="sc">$</span>fertilized <span class="sc">==</span> <span class="dv">0</span>),</span>
+<span id="cb8-86"><a href="#cb8-86" aria-hidden="true" tabindex="-1"></a>  <span class="at">fert_unk =</span> <span class="fu">sum</span>(df<span class="sc">$</span>fertilized <span class="sc">==</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-87"><a href="#cb8-87" aria-hidden="true" tabindex="-1"></a>  <span class="at">gender_f =</span> <span class="fu">sum</span>(df<span class="sc">$</span>gender <span class="sc">==</span> <span class="st">&quot;Female&quot;</span>),</span>
+<span id="cb8-88"><a href="#cb8-88" aria-hidden="true" tabindex="-1"></a>  <span class="at">gender_b =</span> <span class="fu">sum</span>(df<span class="sc">$</span>gender <span class="sc">==</span> <span class="st">&quot;Both&quot;</span>),</span>
+<span id="cb8-89"><a href="#cb8-89" aria-hidden="true" tabindex="-1"></a>  <span class="at">gender_unk =</span> <span class="fu">sum</span>(df<span class="sc">$</span>gender <span class="sc">==</span> <span class="st">&quot;&quot;</span>),</span>
+<span id="cb8-90"><a href="#cb8-90" aria-hidden="true" tabindex="-1"></a>  <span class="at">planting_date =</span> <span class="fu">sum</span>(df<span class="sc">$</span>planting_date <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">&quot;&quot;</span>, <span class="st">&quot;--&quot;</span>)),</span>
+<span id="cb8-91"><a href="#cb8-91" aria-hidden="true" tabindex="-1"></a>  <span class="at">death_date =</span> <span class="fu">sum</span>(df<span class="sc">$</span>death_date_observed <span class="sc">!=</span> <span class="st">&quot;&quot;</span>)</span>
+<span id="cb8-92"><a href="#cb8-92" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb8-93"><a href="#cb8-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-94"><a href="#cb8-94" aria-hidden="true" tabindex="-1"></a>plant_info <span class="ot">&lt;-</span> <span class="fu">rbind</span>(spp, allplants)</span>
+<span id="cb8-95"><a href="#cb8-95" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-96"><a href="#cb8-96" aria-hidden="true" tabindex="-1"></a><span class="co"># Extract most useful information</span></span>
+<span id="cb8-97"><a href="#cb8-97" aria-hidden="true" tabindex="-1"></a>plant_info2 <span class="ot">&lt;-</span> plant_info <span class="sc">%&gt;%</span></span>
+<span id="cb8-98"><a href="#cb8-98" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span><span class="fu">c</span>(shade_reported, gender_f, gender_b, gender_unk)) <span class="sc">%&gt;%</span></span>
+<span id="cb8-99"><a href="#cb8-99" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">patch =</span> <span class="fu">paste0</span>(patch_yes, <span class="st">&quot; (&quot;</span>, patch_with_size, <span class="st">&quot;)&quot;</span>),</span>
+<span id="cb8-100"><a href="#cb8-100" aria-hidden="true" tabindex="-1"></a>         <span class="at">wild =</span> <span class="fu">paste0</span>(wild_yes, <span class="st">&quot;/&quot;</span>, wild_no, <span class="st">&quot;/&quot;</span>, wild_unk),</span>
+<span id="cb8-101"><a href="#cb8-101" aria-hidden="true" tabindex="-1"></a>         <span class="at">water =</span> <span class="fu">paste0</span>(water_yes, <span class="st">&quot;/&quot;</span>, water_no, <span class="st">&quot;/&quot;</span>, water_unk),</span>
+<span id="cb8-102"><a href="#cb8-102" aria-hidden="true" tabindex="-1"></a>         <span class="at">fertilized =</span> <span class="fu">paste0</span>(fert_yes, <span class="st">&quot;/&quot;</span>, fert_no, <span class="st">&quot;/&quot;</span>, fert_unk)) <span class="sc">%&gt;%</span></span>
+<span id="cb8-103"><a href="#cb8-103" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(<span class="sc">-</span><span class="fu">c</span>(patch_yes, patch_with_size, wild_yes, wild_no, wild_unk,</span>
+<span id="cb8-104"><a href="#cb8-104" aria-hidden="true" tabindex="-1"></a>            water_yes, water_no, water_unk, fert_yes, fert_no, fert_unk))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<caption>Summary of information observers reported about plants that have been monitored since October 2023, by species. Planting date and Death date represent the number of plants where observers provided the date of planting or the date a plant died (if relevant). Patch indicates how many of these “individuals” were monitered as a patch (i.e, multiple plants), and for those that were monitored as patches, the number of instances where the observer noted the approximate size of the patch (in square feet). Note that for the patch information, there were no data to differentiate a “no” response from unreported.</caption>
+<colgroup>
+<col style="width: 17%">
+<col style="width: 7%">
+<col style="width: 9%">
+<col style="width: 7%">
+<col style="width: 8%">
+<col style="width: 14%">
+<col style="width: 16%">
+<col style="width: 18%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Species</th>
+<th style="text-align: center;">No. plants</th>
+<th style="text-align: center;">Planting date</th>
+<th style="text-align: center;">Death date</th>
+<th style="text-align: center;">Patch (size)</th>
+<th style="text-align: center;">Wild (Y/N/Unreported)</th>
+<th style="text-align: center;">Watered (Y/N/Unreported)</th>
+<th style="text-align: center;">Fertilized (Y/N/Unreported)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">American beautyberry</td>
+<td style="text-align: center;">47</td>
+<td style="text-align: center;">39</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">3 (3)</td>
+<td style="text-align: center;">16/16/15</td>
+<td style="text-align: center;">10/19/18</td>
+<td style="text-align: center;">2/26/19</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">American star-thistle</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (0)</td>
+<td style="text-align: center;">1/0/2</td>
+<td style="text-align: center;">1/0/2</td>
+<td style="text-align: center;">0/1/2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Canada goldenrod</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">1/0/1</td>
+<td style="text-align: center;">1/0/1</td>
+<td style="text-align: center;">0/1/1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Texas lupine</td>
+<td style="text-align: center;">14</td>
+<td style="text-align: center;">9</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">7 (5)</td>
+<td style="text-align: center;">6/5/3</td>
+<td style="text-align: center;">3/7/4</td>
+<td style="text-align: center;">0/10/4</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">West Indian shrubverbena</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">3 (1)</td>
+<td style="text-align: center;">1/3/0</td>
+<td style="text-align: center;">3/0/1</td>
+<td style="text-align: center;">0/3/1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">aquatic milkweed</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (1)</td>
+<td style="text-align: center;">0/1/1</td>
+<td style="text-align: center;">1/0/1</td>
+<td style="text-align: center;">0/1/1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">black elderberry</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/0/1</td>
+<td style="text-align: center;">0/0/1</td>
+<td style="text-align: center;">0/0/1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">blackeyed Susan</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/0/3</td>
+<td style="text-align: center;">0/0/3</td>
+<td style="text-align: center;">0/0/3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">blue mistflower</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">7</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2 (2)</td>
+<td style="text-align: center;">0/2/6</td>
+<td style="text-align: center;">2/0/6</td>
+<td style="text-align: center;">0/1/7</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">broadleaf milkweed</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2 (2)</td>
+<td style="text-align: center;">2/0/0</td>
+<td style="text-align: center;">0/2/0</td>
+<td style="text-align: center;">0/2/0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">button eryngo</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/3/0</td>
+<td style="text-align: center;">0/3/0</td>
+<td style="text-align: center;">1/2/0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">cardinalflower</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/1/0</td>
+<td style="text-align: center;">1/0/0</td>
+<td style="text-align: center;">0/1/0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">common buttonbush</td>
+<td style="text-align: center;">24</td>
+<td style="text-align: center;">22</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">6/10/8</td>
+<td style="text-align: center;">3/12/9</td>
+<td style="text-align: center;">0/14/10</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">common sunflower</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">7</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">5 (4)</td>
+<td style="text-align: center;">3/2/3</td>
+<td style="text-align: center;">2/4/2</td>
+<td style="text-align: center;">0/4/4</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">eastern baccharis</td>
+<td style="text-align: center;">7</td>
+<td style="text-align: center;">6</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">3/0/4</td>
+<td style="text-align: center;">0/3/4</td>
+<td style="text-align: center;">0/3/4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">eastern purple coneflower</td>
+<td style="text-align: center;">6</td>
+<td style="text-align: center;">5</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/3/3</td>
+<td style="text-align: center;">3/0/3</td>
+<td style="text-align: center;">0/3/3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">eastern redbud</td>
+<td style="text-align: center;">38</td>
+<td style="text-align: center;">26</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">9/16/13</td>
+<td style="text-align: center;">11/16/11</td>
+<td style="text-align: center;">2/23/13</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">firewheel</td>
+<td style="text-align: center;">6</td>
+<td style="text-align: center;">5</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (1)</td>
+<td style="text-align: center;">0/3/3</td>
+<td style="text-align: center;">3/0/3</td>
+<td style="text-align: center;">1/2/3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">golden crownbeard</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/0/1</td>
+<td style="text-align: center;">0/0/1</td>
+<td style="text-align: center;">0/0/1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">green antelopehorn</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (1)</td>
+<td style="text-align: center;">1/2/1</td>
+<td style="text-align: center;">2/1/1</td>
+<td style="text-align: center;">0/3/1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">horsetail milkweed</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2 (2)</td>
+<td style="text-align: center;">3/0/0</td>
+<td style="text-align: center;">0/3/0</td>
+<td style="text-align: center;">0/3/0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">lemon beebalm</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (1)</td>
+<td style="text-align: center;">1/0/1</td>
+<td style="text-align: center;">0/1/1</td>
+<td style="text-align: center;">0/1/1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">mealycup sage</td>
+<td style="text-align: center;">7</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">3 (3)</td>
+<td style="text-align: center;">0/6/1</td>
+<td style="text-align: center;">5/1/1</td>
+<td style="text-align: center;">1/5/1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">palmleaf thoroughwort</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (1)</td>
+<td style="text-align: center;">0/2/0</td>
+<td style="text-align: center;">2/0/0</td>
+<td style="text-align: center;">0/2/0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">purple passionflower</td>
+<td style="text-align: center;">6</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2 (2)</td>
+<td style="text-align: center;">0/3/3</td>
+<td style="text-align: center;">2/2/2</td>
+<td style="text-align: center;">0/4/2</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">purple prairie clover</td>
+<td style="text-align: center;">5</td>
+<td style="text-align: center;">5</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/0/5</td>
+<td style="text-align: center;">0/0/5</td>
+<td style="text-align: center;">0/0/5</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">red maple</td>
+<td style="text-align: center;">26</td>
+<td style="text-align: center;">20</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">7/6/13</td>
+<td style="text-align: center;">4/10/12</td>
+<td style="text-align: center;">0/14/12</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">rubber rabbitbrush</td>
+<td style="text-align: center;">5</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (1)</td>
+<td style="text-align: center;">3/1/1</td>
+<td style="text-align: center;">0/4/1</td>
+<td style="text-align: center;">1/2/2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">seaside goldenrod</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (1)</td>
+<td style="text-align: center;">0/1/0</td>
+<td style="text-align: center;">1/0/0</td>
+<td style="text-align: center;">0/1/0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">showy milkweed</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2 (2)</td>
+<td style="text-align: center;">2/2/0</td>
+<td style="text-align: center;">2/2/0</td>
+<td style="text-align: center;">0/3/1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">spider milkweed</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">3</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1 (1)</td>
+<td style="text-align: center;">1/0/2</td>
+<td style="text-align: center;">0/1/2</td>
+<td style="text-align: center;">0/1/2</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">straggler daisy</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/0/1</td>
+<td style="text-align: center;">0/0/1</td>
+<td style="text-align: center;">0/0/1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">tall blazing star</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/1/0</td>
+<td style="text-align: center;">1/0/0</td>
+<td style="text-align: center;">0/1/0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">trumpet honeysuckle</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/1/0</td>
+<td style="text-align: center;">1/0/0</td>
+<td style="text-align: center;">0/0/1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">turkey tangle fogfruit</td>
+<td style="text-align: center;">6</td>
+<td style="text-align: center;">6</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2 (2)</td>
+<td style="text-align: center;">1/1/4</td>
+<td style="text-align: center;">1/1/4</td>
+<td style="text-align: center;">0/2/4</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">upright prairie coneflower</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0 (0)</td>
+<td style="text-align: center;">0/0/1</td>
+<td style="text-align: center;">0/0/1</td>
+<td style="text-align: center;">0/0/1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">wax mallow</td>
+<td style="text-align: center;">9</td>
+<td style="text-align: center;">6</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2 (2)</td>
+<td style="text-align: center;">0/3/6</td>
+<td style="text-align: center;">3/0/6</td>
+<td style="text-align: center;">1/2/6</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">white crownbeard</td>
+<td style="text-align: center;">10</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4 (3)</td>
+<td style="text-align: center;">5/2/3</td>
+<td style="text-align: center;">2/4/4</td>
+<td style="text-align: center;">0/6/4</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">wild bergamot</td>
+<td style="text-align: center;">7</td>
+<td style="text-align: center;">5</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4 (4)</td>
+<td style="text-align: center;">2/4/1</td>
+<td style="text-align: center;">4/2/1</td>
+<td style="text-align: center;">0/5/2</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">All plants</td>
+<td style="text-align: center;">284</td>
+<td style="text-align: center;">225</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">52 (45)</td>
+<td style="text-align: center;">74/100/110</td>
+<td style="text-align: center;">74/98/112</td>
+<td style="text-align: center;">9/152/123</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
 
 </main>
 <!-- /main column -->

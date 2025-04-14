@@ -28,6 +28,7 @@ require(maptiles)
 require(tidyterra)
 require(dplyr)
 require(magick)
+require(jsonlite)
 
 # Logical indicating whether to re-download data
 update_data <- FALSE
@@ -1153,4 +1154,129 @@ freq_by_php
 #| fig.width: 10
 
 freq_by_spp
+```
+
+### Plant information
+
+We also extracted information that observers provided about individual plants and summarized this information by species.
+
+```{r plant-metadata}
+#| code-fold: true
+
+ids <- unique(status$individual_id)
+
+idsl <- 1:length(ids) - 1
+ids_call <- paste0("individual_id[", idsl, "]=", ids, "&", collapse = "")
+ids_call <- str_sub(ids_call, end = -2)
+
+url_base <- "https://services.usanpn.org/npn_portal/individuals/getPlantDetails.json?"
+url <- paste0(url_base, ids_call)
+
+# Get information about each plant from API
+json_data <- read_json(
+  path = url, 
+  simplifyVector = TRUE
+)
+df <- json_data %>%
+  select(-c(comment, plant_image_url, plant_image_upload_date))
+
+# Append information about species to the plant data
+status <- status %>%
+  left_join(select(nn_spp, species_id, common_name, scientific_name), 
+            by = c("common_name", "species_id"))
+df <- df %>%
+  left_join(distinct(status, individual_id, common_name), by = "individual_id")
+
+# Check that all species in status-intensity data appear in plant info df
+# status$individual_id[!status$individual_id %in% df$individual_id]
+# df$individual_id[!df$individual_id %in% status$individual_id]
+# ok
+
+# Remove any duplicates (for some reason there are some [~20])
+df <- distinct(df)
+# Check that there's only one row per individual
+# length(unique(df$individual_id)); length(ids)
+
+# Look at variable structures
+# count(df, patch) # 52 yes, rest are blank
+# count(df, patch_size) # 45 with value, rest are blank
+# count(df, shade_status) # 110 blank
+# count(df, wild) # 0 or 1 or blank (110)
+# count(df, watered) # 0 or 1 or blank (112)
+# count(df, fertilized) # 0 or 1 or blank (123)
+# count(df, gender) # Female (1) or Both (36) or blank (247)
+# count(df, planting_date) # 225 blank or "--", rest with mix of year or exact date
+# count(df, death_date_observed) # Only 1 value
+# count(df, last_date_observed_alive) # Only 1 value
+# count(df, death_reason) # 2 Unknown, rest blank
+
+# Summarize by species
+spp <- df %>%
+  group_by(common_name) %>%
+  summarize(n_plants = n(),
+            patch_yes = sum(patch == 1),
+            patch_with_size = sum(patch_size != ""),
+            shade_reported = sum(shade_status != ""),
+            wild_yes = sum(wild == 1),
+            wild_no = sum(wild == 0),
+            wild_unk = sum(wild == ""),
+            water_yes = sum(watered == 1),
+            water_no = sum(watered == 0),
+            water_unk = sum(watered == ""),
+            fert_yes = sum(fertilized == 1),
+            fert_no = sum(fertilized == 0),
+            fert_unk = sum(fertilized == ""),
+            gender_f = sum(gender == "Female"),
+            gender_b = sum(gender == "Both"),
+            gender_unk = sum(gender == ""),
+            planting_date = sum(planting_date %in% c("", "--")),
+            death_date = sum(death_date_observed != "")) %>%
+  data.frame()
+  
+
+allplants <- data.frame(
+  common_name = "All plants",
+  n_plants = nrow(df),
+  patch_yes = sum(df$patch == 1),
+  patch_with_size = sum(df$patch_size != ""),
+  shade_reported = sum(df$shade_status != ""),
+  wild_yes = sum(df$wild == 1),
+  wild_no = sum(df$wild == 0),
+  wild_unk = sum(df$wild == ""),
+  water_yes = sum(df$watered == 1),
+  water_no = sum(df$watered == 0),
+  water_unk = sum(df$watered == ""),
+  fert_yes = sum(df$fertilized == 1),
+  fert_no = sum(df$fertilized == 0),
+  fert_unk = sum(df$fertilized == ""),
+  gender_f = sum(df$gender == "Female"),
+  gender_b = sum(df$gender == "Both"),
+  gender_unk = sum(df$gender == ""),
+  planting_date = sum(df$planting_date %in% c("", "--")),
+  death_date = sum(df$death_date_observed != "")
+)
+
+plant_info <- rbind(spp, allplants)
+
+# Extract most useful information
+plant_info2 <- plant_info %>%
+  select(-c(shade_reported, gender_f, gender_b, gender_unk)) %>%
+  mutate(patch = paste0(patch_yes, " (", patch_with_size, ")"),
+         wild = paste0(wild_yes, "/", wild_no, "/", wild_unk),
+         water = paste0(water_yes, "/", water_no, "/", water_unk),
+         fertilized = paste0(fert_yes, "/", fert_no, "/", fert_unk)) %>%
+  select(-c(patch_yes, patch_with_size, wild_yes, wild_no, wild_unk,
+            water_yes, water_no, water_unk, fert_yes, fert_no, fert_unk))
+```
+
+```{r}
+#| label: plant-info-table
+#| tbl-cap: Summary of information observers reported about plants that have been monitored since October 2023, by species. Planting date and Death date represent the number of plants where observers provided the date of planting or the date a plant died (if relevant). Patch indicates how many of these "individuals" were monitered as a patch (i.e, multiple plants), and for those that were monitored as patches, the number of instances where the observer noted the approximate size of the patch (in square feet). Note that for the patch information, there were no data to differentiate a "no" response from unreported. 
+#| echo: false
+
+knitr::kable(plant_info2,
+             col.names = c("Species", "No. plants", "Planting date", "Death date", "Patch (size)", 
+                           "Wild (Y/N/Unreported)", "Watered (Y/N/Unreported)", 
+                           "Fertilized (Y/N/Unreported)"),
+             align = c("l", rep("c", 7)))
 ```
