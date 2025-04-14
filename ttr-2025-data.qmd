@@ -27,7 +27,6 @@ require(map)
 require(maptiles)
 require(tidyterra)
 require(dplyr)
-require(magick)
 require(jsonlite)
 
 # Logical indicating whether to re-download data
@@ -325,7 +324,7 @@ intensitycat_high <- status %>%
 There was `r sum(int_no$wy == 2025)` instance since October 2024 where an observer did not report "yes" for a particular phenohpase, but did report an intensity value.
 
 ```{r}
-#| label: intensity-no-postive-status
+#| label: tbl-intensity-no-postive-status
 #| tbl-cap: Observations with an intensity value, where phenophase state was not positive.
 #| code-fold: false
 #| echo: false
@@ -343,7 +342,7 @@ knitr::kable(int_no %>%
 To explore whether observers were counting the number of flowers rather than the number of inflorescences, we identified observations where the reported intensity value was in the highest two categories available for that species.
 
 ```{r}
-#| label: flowers-high
+#| label: tbl-flowers-high
 #| tbl-cap: Observations of flowers with high reported intensity values by water year.
 #| code-fold: false
 #| echo: false
@@ -460,7 +459,7 @@ fruit_probs <- statusw %>%
 ```
 
 ```{r}
-#| label: flower-statusprobs
+#| label: tbl-flower-statusprobs
 #| tbl-cap: Inconsistent reports of flowering phenophase statuses by species and water year
 #| echo: false
 
@@ -474,7 +473,7 @@ knitr::kable(flower_probs_short,
 ```
 
 ```{r}
-#| label: fruit-statusprobs
+#| label: tbl-fruit-statusprobs
 #| tbl-cap: Inconsistent reports of fruiting phenophase statuses
 #| echo: false
 
@@ -694,62 +693,52 @@ map_file <- "ttr-2025-figs/ttr-2025-map.png"
 ```
 
 ```{r}
-#| label: state4_map
+#| label: fig-state4
 #| fig-cap: Locations of sites where priority species were monitored between October 2024 and present. 
 #| echo: false
 #| fig.width: 8
 
-map <- magick::image_read("ttr-2025-figs/ttr-2025-map.png") %>%
-  magick::image_ggplot(interpolate = TRUE)
-map
+knitr::include_graphics("ttr-2025-figs/ttr-2025-map.png")
 ```
 
 ```{r}
-#| label: la_map
+#| label: fig-la
 #| fig-cap: Locations of sites in Louisiana where priority species were monitored between October 2024 and present. 
 #| echo: false
 #| fig.width: 10
 
-la_map <- magick::image_read("ttr-2025-figs/LA-map.png") %>%
-  magick::image_ggplot(interpolate = TRUE)
-la_map
+knitr::include_graphics("ttr-2025-figs/LA-map.png")
 ```
 
 ```{r}
-#| label: nm_map
+#| label: fig-nm
 #| fig-cap: Locations of sites in New Mexico where priority species were monitored between October 2024 and present. 
 #| echo: false
 #| fig.width: 10
 
-nm_map <- magick::image_read("ttr-2025-figs/NM-map.png") %>%
-  magick::image_ggplot(interpolate = TRUE)
-nm_map
+knitr::include_graphics("ttr-2025-figs/NM-map.png")
 ```
 
 ```{r}
-#| label: ok_map
+#| label: fig-ok
 #| fig-cap: Locations of sites in Oklahoma where priority species were monitored between October 2024 and present. 
 #| echo: false
 #| fig.width: 10
 
-ok_map <- magick::image_read("ttr-2025-figs/OK-map.png") %>%
-  magick::image_ggplot(interpolate = TRUE)
-ok_map
+knitr::include_graphics("ttr-2025-figs/OK-map.png")
 ```
 
 ```{r}
-#| label: tx_map
+#| label: fig-tx
 #| fig-cap: Locations of sites in Texas where priority species were monitored between October 2024 and present. 
 #| echo: false
 #| fig.width: 10
 
-tx_map <- magick::image_read("ttr-2025-figs/TX-map.png") %>%
-  magick::image_ggplot(interpolate = TRUE)
-tx_map
+knitr::include_graphics("ttr-2025-figs/TX-map.png")
 ```
 
 ```{r}
-#| label: sites-table
+#| label: tbl-sites
 #| tbl-cap: Summary of sites monitored in each state from October 2024 to present. Here, an observation is all data collected for a plant on a given date.
 #| echo: false
 
@@ -789,7 +778,7 @@ plantspp <- plants %>%
 ```
 
 ```{r}
-#| label: plants-table
+#| label: tbl-plants
 #| tbl-cap: Summary of plants monitored from October 2024 to present. Here, an observation is all data collected for a plant on a given date.
 #| echo: false
 
@@ -893,7 +882,7 @@ if (!file.exists(hist2_file) | update_data == TRUE) {
 ```
 
 ```{r}
-#| label: observer-table
+#| label: tbl-observer
 #| tbl-cap: Summary of people who submitted data for priority species since October 2024, by state. Values in table are means, with range of values in parentheses.
 #| echo: false
 
@@ -913,7 +902,7 @@ knitr::kable(observers_table,
 \
 
 ```{r}
-#| label: spp-per-observer
+#| label: fig-spp-per-observer
 #| fig-cap: Number of species each observer monitored since October 2024.
 #| echo: false
 #| fig.height: 3
@@ -925,7 +914,7 @@ p_nspp
 \
 
 ```{r}
-#| label: plants-per-spp
+#| label: fig-plants-per-spp
 #| fig-cap: Number of plants per species that observers monitored since October 2024
 #| echo: false
 #| fig.height: 3
@@ -1135,7 +1124,7 @@ freq_by_spp <- ggplot(obsfreq_sppl) +
 \
 
 ```{r}
-#| label: freq-by-php
+#| label: fig-freq-by-php
 #| fig-cap: Proportion of first "yes" observations that were associated with a prior "no" with a given number of days, grouped by phenophase. 2024 = November 2023 - September 2024. 2025 = November 2024 - present.
 #| echo: false
 #| fig.height: 5
@@ -1147,7 +1136,7 @@ freq_by_php
 \
 
 ```{r}
-#| label: freq-by-spp
+#| label: fig-freq-by-spp
 #| fig-cap: Proportion of first "yes" observations that were associated with a prior "no" with a given number of days, grouped by species. We excluded species with fewer than 10 "yes" observations in both water years. 2024 = November 2023 - September 2024. 2025 = November 2024 - present.
 #| echo: false
 #| fig.height: 5
@@ -1270,7 +1259,7 @@ plant_info2 <- plant_info %>%
 ```
 
 ```{r}
-#| label: plant-info-table
+#| label: tbl-plant-info
 #| tbl-cap: Summary of information observers reported about plants that have been monitored since October 2023, by species. Planting date and Death date represent the number of plants where observers provided the date of planting or the date a plant died (if relevant). Patch indicates how many of these "individuals" were monitered as a patch (i.e, multiple plants), and for those that were monitored as patches, the number of instances where the observer noted the approximate size of the patch (in square feet). Note that for the patch information, there were no data to differentiate a "no" response from unreported. 
 #| echo: false
 
