@@ -105,7 +105,7 @@ This left us with `r nrow(spp_list)` priority species.
 
 ### Downloading status-intensity data
 
-Used rnpn package to download status and intensity data for priority species in Louisiana, New Mexico, Oklahoma, and Texas from 1 October 2023 through the present day. Downloaded observations of 4 phenophases: flowers or flower buds (flower), open flowers, fruits, and ripe fruits. Since leaves on milkweed plants may be important for monarch eggs and catepillars, we also downloaded observations of the leaves phenophase for the `r sum(str_detect(spp_list$common_name, "milkweed"))` species of milkweed on the priority list. After downloading the data, we appended information about intensity categories.
+Used rnpn package to download status and intensity data for priority species in Louisiana, New Mexico, Oklahoma, and Texas from 1 October 2023 through 30 September 2025. We downloaded observations of 4 phenophases: flowers or flower buds (flower), open flowers, fruits, and ripe fruits. Since leaves on milkweed plants may be important for monarch eggs and catepillars, we also downloaded observations of the leaves phenophase for the `r sum(str_detect(spp_list$common_name, "milkweed"))` species of milkweed on the priority list. After downloading the data, we appended information about intensity categories.
 
 ```{r load-states}
 #| echo: false
@@ -114,7 +114,6 @@ Used rnpn package to download status and intensity data for priority species in 
 states <- vect("data/states/cb_2017_us_state_500k.shp")
 
 ```
-
 
 ```{r download}
 #| code-fold: true
@@ -202,6 +201,7 @@ if (!file.exists(data_filename) | update_data == TRUE) {
              phenophase_id == 390 ~ "ripe fruit",
              phenophase_id == 488 ~ "leaves")) %>%
     filter(obsdate >= "2023-10-01") %>%
+    filter(obsdate <= "2025-09-30") %>%
     select(-c(update_datetime, elevation_in_meters, genus, species, kingdom,
               phenophase_description, abundance_value, observation_date)) %>%
     rename(person_id = observedby_person_id,
@@ -242,7 +242,7 @@ status <- read.csv(data_filename) %>%
          wy = ifelse(obsdate >= "2024-10-01", 2025, 2024))
 ```
 
-For the purposes of this report, we focused on observations submitted in the current water year, from 1 October 2024 - `r format(max(status$obsdate), "%d %B %Y")`, the last date that observations were available. Throughout this report, we often compared current water-year data with data collected during the previous water year (October 2023 - September 2024), while keeping in mind that we are not entirely through the current water year.
+For the purposes of this report, we focused on observations submitted in the current water year, from 1 October 2024 - 30 September 2025. Throughout this report, we often compared current water-year data with data collected during the previous water year (October 2023 - September 2024).
 
 ```{r intensities}
 #| code-fold: true
@@ -388,14 +388,6 @@ intensitycat_high %>%
                       "Observations", "Plants", "Observations", "Plants"),
         align = c("l", "c", "r", "c", "c", "c", "c")) %>%
   add_header_above(header = c(" " = 3, "2024" = 2, "2025" = 2))
-
-# knitr::kable(intensitycat_high %>%
-#                select(common_name, php, intensity_value, nhigh_2024,
-#                       nplants_2024, nhigh_2025, nplants_2025),
-#              col.names = c("Species", "Phenophase", "Intensity category", 
-#                            "No. 2024 observations", "No. 2024 plants", 
-#                            "No. 2025 observations", "No. 2025 plants"),
-#              align = c("l", "c", "r", "c", "c", "c", "c"))
 ```
 
 ### Identifying inconsistent phenophase status reports
@@ -737,7 +729,7 @@ map_file <- "ttr-sep2025-figs/ttr-2025-map.png"
 
 ```{r}
 #| label: fig-state4
-#| fig-cap: Locations of sites where priority species were monitored between October 2024 and present. 
+#| fig-cap: Locations of sites where priority species were monitored between October 2024 and September 2025. 
 #| echo: false
 #| fig.width: 8
 
@@ -746,7 +738,7 @@ knitr::include_graphics("ttr-sep2025-figs/ttr-2025-map.png")
 
 ```{r}
 #| label: fig-la
-#| fig-cap: Locations of sites in Louisiana where priority species were monitored between October 2024 and present. 
+#| fig-cap: Locations of sites in Louisiana where priority species were monitored between October 2024 and September 2025. 
 #| echo: false
 #| fig.width: 10
 
@@ -755,7 +747,7 @@ knitr::include_graphics("ttr-sep2025-figs/LA-map.png")
 
 ```{r}
 #| label: fig-nm
-#| fig-cap: Locations of sites in New Mexico where priority species were monitored between October 2024 and present. 
+#| fig-cap: Locations of sites in New Mexico where priority species were monitored between October 2024 and September 2025. 
 #| echo: false
 #| fig.width: 10
 
@@ -764,7 +756,7 @@ knitr::include_graphics("ttr-sep2025-figs/NM-map.png")
 
 ```{r}
 #| label: fig-ok
-#| fig-cap: Locations of sites in Oklahoma where priority species were monitored between October 2024 and present. 
+#| fig-cap: Locations of sites in Oklahoma where priority species were monitored between October 2024 and September 2025. 
 #| echo: false
 #| fig.width: 10
 
@@ -773,7 +765,7 @@ knitr::include_graphics("ttr-sep2025-figs/OK-map.png")
 
 ```{r}
 #| label: fig-tx
-#| fig-cap: Locations of sites in Texas where priority species were monitored between October 2024 and present. 
+#| fig-cap: Locations of sites in Texas where priority species were monitored between October 2024 and September 2025. 
 #| echo: false
 #| fig.width: 10
 
@@ -782,7 +774,7 @@ knitr::include_graphics("ttr-sep2025-figs/TX-map.png")
 
 ```{r}
 #| label: tbl-sites
-#| tbl-cap: Summary of sites monitored in each state from October 2024 to present. Here, an observation is all data collected for a plant on a given date.
+#| tbl-cap: Summary of sites monitored in each state from October 2024 to September 2025. Here, an observation is all data collected for a plant on a given date.
 #| echo: false
 
 knitr::kable(locs_by_state,
@@ -822,7 +814,7 @@ plantspp <- plants %>%
 
 ```{r}
 #| label: tbl-plants
-#| tbl-cap: Summary of plants monitored from October 2024 to present. Here, an observation is all data collected for a plant on a given date.
+#| tbl-cap: Summary of plants monitored from October 2024 to September 2025. Here, an observation is all data collected for a plant on a given date.
 #| echo: false
 
 knitr::kable(plantspp %>%
@@ -926,7 +918,7 @@ if (!file.exists(hist2_file) | update_data == TRUE) {
 
 ```{r}
 #| label: tbl-observer
-#| tbl-cap: Summary of people who submitted data for priority species since October 2024, by state. Values in table are means, with range of values in parentheses.
+#| tbl-cap: Summary of people who submitted data for priority species between October 2024 and September 2025, by state. Values in table are means, with range of values in parentheses.
 #| echo: false
 
 observers_table <- observers_state_s %>%
@@ -946,7 +938,7 @@ knitr::kable(observers_table,
 
 ```{r}
 #| label: fig-spp-per-observer
-#| fig-cap: Number of species each observer monitored since October 2024.
+#| fig-cap: Number of species each observer monitored between October 2024 and September 2025.
 #| echo: false
 #| fig.height: 3
 #| fig.width: 8
@@ -958,7 +950,7 @@ p_nspp
 
 ```{r}
 #| label: fig-plants-per-spp
-#| fig-cap: Number of plants per species that observers monitored since October 2024
+#| fig-cap: Number of plants per species that observers monitored between October 2024 and September 2025.
 #| echo: false
 #| fig.height: 3
 #| fig.width: 8
@@ -968,7 +960,7 @@ p_plantsperspp
 
 ### Observation frequency: Reporting a "no" prior to the first "yes"
 
-To evaluate observation frequency, we downloaded individual phenometrics data for priority species from 1 October 2023 through the present day.
+To evaluate observation frequency, we downloaded individual phenometrics data for priority species from 1 October 2023 through 30 September 2025.
 
 ```{r download-ip-data}
 #| code-fold: true
@@ -978,7 +970,7 @@ ip_filename <- "data/ttr-ipdata-2024sep2025.csv"
 
 if (!file.exists(ip_filename) | update_data == TRUE) {
   
-  # Download flowering, fruiting data for Oct 2024 - April 2025 and Oct 2023 - 
+  # Download flowering, fruiting data for Oct 2024 - Sep 2025 and Oct 2023 - 
   # Sep 2024 (phenometrics aggregated over water year).
   # After some experimenting, it looks like when requesting data by water year, 
   # the years argument corresponds to the start of each year in October. So we
@@ -1063,18 +1055,24 @@ if (!file.exists(ip_filename) | update_data == TRUE) {
 ip <- read.csv(ip_filename)
 ```
 
-For these summaries, we evaluated observation frequency by classifying flowering and fruiting observations based on the time elapsed between a "no" observation and the first "yes" observation of a given phenophase. Here, we compared first yeses that were submitted between 1 November 2024 and the present (\~2025 water year) with first yeses that were submitted between 1 November 2023 and 30 September 2024 (\~2024 water year).
+For these summaries, we evaluated observation frequency by classifying flowering and fruiting observations based on the time elapsed between a "no" observation and the first "yes" observation of a given phenophase. Here, we compared first yeses that were submitted between 1 October 2024 and 30 September 2025 (2025 water year) with first yeses that were submitted between 1 October 2023 and 30 September 2024 (2024 water year).
 
 ```{r classifying-prior-nos}
 #| code-fold: true
 
+# Note that if a first yes occurred very early in the water year, the downloaded data may not report that
+# there was a prior no shortly before. Number of days since prior no may be NA, even if there was a "no" 
+# observation not long before if it occurred in a different water year. Ultimately, it would be better
+# if we used status data to create first yeses that could better account for observations around the
+# start of the water year, but not going to bother with that now. 
+
 ip <- ip %>%
-  # Create "season" (Nov 2024 - Sept 2025 = 2025)
+  # Create season (ie, water year, where Oct 2024 - Sept 2025 = 2025)
   mutate(yes_date = parse_date_time(paste(first_yes_year, first_yes_doy),
                                     orders = "Y j"),
          yes_month = month(yes_date),
          season = case_when(
-           yes_month %in% 11:12 ~ first_yes_year + 1,
+           yes_month %in% 10:12 ~ first_yes_year + 1,
            yes_month %in% 1:9 ~ first_yes_year,
            .default = NA))
 # check
@@ -1151,11 +1149,11 @@ obsfreq_spp <- ip %>%
 
 # Make a bar chart for this
 # Only using species that had at least 20 first yeses in one of the years:
-spp10 <- unique(obsfreq_spp$common_name[obsfreq_spp$nobs >= 20])
+spp20 <- unique(obsfreq_spp$common_name[obsfreq_spp$nobs >= 20])
 obsfreq_sppl <- ip %>%
   filter(!is.na(season)) %>%
   filter(php != "leaves") %>%
-  filter(common_name %in% spp10) %>%
+  filter(common_name %in% spp20) %>%
   mutate(common_name = factor(common_name)) %>%
   group_by(season, common_name) %>%
   summarize(nobs03 = sum(!is.na(prior_no) & prior_no %in% 1:3),
@@ -1190,7 +1188,7 @@ freq_by_spp <- ggplot(obsfreq_sppl) +
 
 ```{r}
 #| label: fig-freq-by-php
-#| fig-cap: Proportion of first "yes" observations that were associated with a prior "no" with a given number of days, grouped by phenophase. 2024 = November 2023 - September 2024. 2025 = November 2024 - present.
+#| fig-cap: Proportion of first "yes" observations that were associated with a prior "no" with a given number of days, grouped by phenophase. 2024 = October 2023 - September 2024. 2025 = October 2024 - September 2025.
 #| echo: false
 #| fig.height: 5
 #| fig.width: 10
@@ -1202,7 +1200,7 @@ freq_by_php
 
 ```{r}
 #| label: fig-freq-by-spp
-#| fig-cap: Proportion of first "yes" observations that were associated with a prior "no" with a given number of days, grouped by species. We excluded species with fewer than 10 "yes" observations in both water years. 2024 = November 2023 - September 2024. 2025 = November 2024 - present.
+#| fig-cap: Proportion of first "yes" observations that were associated with a prior "no" with a given number of days, grouped by species. We excluded species with fewer than 20 "yes" observations in both water years. 2024 = October 2023 - September 2024. 2025 = October 2024 - September 2025.
 #| echo: false
 #| fig.height: 5
 #| fig.width: 10
@@ -1343,9 +1341,17 @@ plant_info2 <- plant_info %>%
 #| tbl-cap: Summary of information observers reported about plants that have been monitored since October 2023, by species. Planting date and Death date represent the number of plants where observers provided the date of planting or the date a plant died (if relevant). Patch indicates how many of these "individuals" were monitered as a patch (i.e, multiple plants), and for those that were monitored as patches, the number of instances where the observer noted the approximate size of the patch (in square feet). Note that for the patch information, there were no data to differentiate a "no" response from unreported. 
 #| echo: false
 
-knitr::kable(plant_info2,
-             col.names = c("Species", "No. plants", "Planting date", "Death date", "Patch (size)", 
-                           "Wild (Y/N/Unreported)", "Watered (Y/N/Unreported)", 
-                           "Fertilized (Y/N/Unreported)"),
-             align = c("l", rep("c", 7)))
+plant_info2 %>%
+  kable(col.names = c("Species", "No. plants", "Planting date", "Death date", 
+                      "Patch (size)", "Wild (Y/N/Unreported)", 
+                      "Watered (Y/N/Unreported)", "Fertilized (Y/N/Unreported)"),
+        align = c("l", rep("c", 7))) %>%
+  kableExtra::kable_styling() %>%
+  row_spec(nrow(plant_info2), bold = TRUE, hline_after = TRUE)
+
+# knitr::kable(plant_info2,
+#              col.names = c("Species", "No. plants", "Planting date", "Death date", "Patch (size)", 
+#                            "Wild (Y/N/Unreported)", "Watered (Y/N/Unreported)", 
+#                            "Fertilized (Y/N/Unreported)"),
+#              align = c("l", rep("c", 7)))
 ```
