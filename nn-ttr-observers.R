@@ -3,6 +3,7 @@ library(lubridate)
 library(stringr)
 library(ggplot2)
 library(tidyr)
+library(terra)
 
 # Need to access the NN database to get summaries of observation effort for 
 # TTR partipants in Texas. This is a bit challenging because observers are not
@@ -246,6 +247,84 @@ persons <- recs %>%
   relocate(records_2024, .before = "spp_2024") %>%
   relocate(records_2025, .before = "spp_2025")
 
+# Add information about site locations (since information about observers
+# location/address was rarely reported)
+sites <- tx %>%
+  filter(person_id %in% persons$person_id) %>%
+  group_by(person_id, site_id, lat, lon) %>%
+  summarize(n_plants = n_distinct(individual_id),
+            n_records = n(),
+            .groups = "keep") %>%
+  data.frame()
+
+# Get zip code for each site:
+# Using a Census file from 2022 since database is missing entries
+zips <- terra::vect("C:/Users/erin/Documents/ZIPs/tl_2022_us_zcta520.shp")
+sitesv <- terra::vect(sites, 
+                      geom = c("lon", "lat"), 
+                      crs = "epsg:4326")
+zips_fill <- terra::extract(zips, sitesv)
+sites$zip <- zips_fill$ZCTA5CE20
+
+# Get county for each site:
+# Using TIGER 2025 data
+counties <- terra::vect("C:/Users/erin/Documents/Counties/tl_2025_us_county.shp")
+counties_fill <- terra::extract(counties, sitesv)
+sites$county <- counties_fill$NAME
+
+# Aggregrate by person:
+person_locs <- sites %>%
+  group_by(person_id) %>%
+  summarize(n_sites = n_distinct(site_id),
+            n_zips = n_distinct(zip),
+            n_counties = n_distinct(county)) %>%
+  data.frame()
+max_n_zips <- max(person_locs$n_zips)
+max_n_counties <- max(person_locs$n_counties)
+
+sites <- sites %>%
+  arrange(person_id, desc(n_records)) %>%
+  distinct(person_id, zip, county)
+sites$zip_num <- 1
+for (i in 2:nrow(sites)) {
+  if (sites$person_id[i] != sites$person_id[i -1]) {
+    sites$zip_num[i] <- 1
+  } else {
+    if (sites$zip[i] == sites$zip[i-1]) {
+      sites$zip_num[i] <- 1
+    } else {
+      sites$zip_num[i] <- sites$zip_num[i-1] + 1
+    }
+  }
+}
+sites$county_num <- 1
+for (i in 2:nrow(sites)) {
+  if (sites$person_id[i] != sites$person_id[i -1]) {
+    sites$county_num[i] <- 1
+  } else {
+    if (sites$county[i] == sites$county[i-1]) {
+      sites$county_num[i] <- 1
+    } else {
+      sites$county_num[i] <- sites$county_num[i-1] + 1
+    }
+  }
+}
+sites <- sites %>%
+  mutate(zip_num = paste0("zip", zip_num),
+         county_num = paste0("county", county_num))
+sites_zip <- sites %>%
+  distinct(person_id, zip, zip_num) %>%
+  pivot_wider(id_cols = person_id,
+              names_from = zip_num,
+              values_from = zip) %>%
+  data.frame()
+sites_county <- sites %>%
+  distinct(person_id, county, county_num) %>%
+  pivot_wider(id_cols = person_id,
+              names_from = county_num,
+              values_from = county) %>%
+  data.frame()
+
 # Attach observer email/name --------------------------------------------------#
 if (access_via_R) {
 
@@ -280,7 +359,6 @@ if (access_via_R) {
   person_tx <- person_info %>%
     filter(person_id %in% persons$person_id)
   
-  
   # Save to csv
   today <- str_remove_all(Sys.Date(), "-")
   write.csv(person_tx,
@@ -293,11 +371,14 @@ if (access_via_R) {
 
 }
 
-persons <- person_tx %>%
+# Join everything together
+persons_merge <- person_tx %>%
   select(person_id, First, Last, email) %>%
+  left_join(sites_county, by = "person_id") %>%
+  left_join(sites_zip, by = "person_id") %>%
   left_join(persons, by = "person_id")
 
 # Write to file
-write.csv(persons, 
+write.csv(persons_merge, 
           "data/ttr-tx-observer-summary-wy20242025.csv",
           row.names = FALSE)
