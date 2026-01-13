@@ -10,8 +10,8 @@ library(terra)
 # easily identified (ie, there is no LPP or similar group for people associated
 # with TTR)
 
-# Restrict summaries to water year (WY) 2024 and 2025 (Oct 2023 - Sep 2025)
-# and TTR priority species in Texas
+# Restrict summaries to water years (WY) 2024-2026 (Oct 2023 - Dec 2025)
+# and TTR priority species in Texas. 
 # Restrict to persons who have made observations of TTR priority species
 
 # All the following for each WY and across both WYs?
@@ -113,9 +113,9 @@ if(!file.exists(tx_file)) {
   state_new <- terra::extract(states, state_fillv)
   state_fill <- cbind(state_fill, state_new = state_new$STUSPS)
   # check:
-  # count(state_fill, state, state_new) %>%
-  #   mutate(same = ifelse(state == state_new, 1, 0)) %>%
-  #   arrange(same)
+  count(state_fill, state, state_new) %>%
+    mutate(same = ifelse(state == state_new, 1, 0)) %>%
+    arrange(same)
   
   # Attach new state labels and keep TX observations only
   tx_df <- status_dl %>%
@@ -143,13 +143,14 @@ tx <- read.csv(tx_file)
 # Remove any duplicate rows
 tx <- tx[!duplicated(tx),]
 
-# Create water year variable
+# Create water year variable and remove observations before Oct 2023
 tx <- tx %>%
   mutate(obsdate = ymd(observation_date),
          yr = year(obsdate),
          month = month(obsdate)) %>%
   mutate(wy = ifelse(month %in% 10:12, yr + 1, yr)) %>%
-  select(-c(observation_date, day_of_year, intensity_category_id))
+  select(-c(observation_date, day_of_year, intensity_category_id)) %>%
+  filter(wy > 2023)
 
 # Remove observations with negative values for person_ID because they're NEON
 # personnel (and not associated with TTR)
@@ -166,11 +167,11 @@ tx <- tx %>%
 
 # Number of records per person
 recs <- tx %>%
-  filter(wy %in% 2024:2025) %>%
   group_by(person_id) %>%
   summarize(records = n(),
             records_2024 = sum(wy == 2024),
             records_2025 = sum(wy == 2025),
+            records_2026 = sum(wy == 2026),
             sites = n_distinct(site_id)) %>%
   data.frame()
 
@@ -179,7 +180,6 @@ obs <- tx %>%
   group_by(person_id, nn_common_name, individual_id, obsdate, wy) %>%
   summarize(n_php = n_distinct(phenophase_id), .groups = "keep") %>%
   data.frame() %>%
-  filter(wy != 2026) %>%
   arrange(person_id, individual_id, obsdate)
 
 # Calculate intervals between observations of same plant
@@ -194,7 +194,6 @@ for (i in 2:nrow(obs)) {
 
 # Summarize information by person-plant-water year (ppw)
 ppw <- obs %>%
-  filter(wy %in% 2024:2025) %>%
   group_by(person_id, nn_common_name, individual_id, wy) %>%
   mutate(n_obs = n()) %>%
   ungroup() %>%
@@ -222,11 +221,14 @@ pw_wide <- pw %>%
               values_from = c(spp, plants, mn_dates_per_plant, mn_interval)) %>%
   select(person_id, 
          spp_2024, plants_2024, mn_dates_per_plant_2024, mn_interval_2024,
-         spp_2025, plants_2025, mn_dates_per_plant_2025, mn_interval_2025) %>%
+         spp_2025, plants_2025, mn_dates_per_plant_2025, mn_interval_2025,
+         spp_2026, plants_2026, mn_dates_per_plant_2026, mn_interval_2026) %>%
   mutate(across(spp_2024:plants_2024, ~replace_na(., 0))) %>%
   mutate(across(mn_dates_per_plant_2024:mn_interval_2024, ~replace_na(., NA))) %>%
   mutate(across(spp_2025:plants_2025, ~replace_na(., 0))) %>%
   mutate(across(mn_dates_per_plant_2025:mn_interval_2025, ~replace_na(., NA))) %>%
+  mutate(across(spp_2026:plants_2026, ~replace_na(., 0))) %>%
+  mutate(across(mn_dates_per_plant_2026:mn_interval_2026, ~replace_na(., NA))) %>%
   data.frame()
 
 # Summarize across plants and years (person_summaries)
@@ -245,7 +247,8 @@ persons <- recs %>%
   left_join(person_summaries, by = "person_id") %>%
   left_join(pw_wide, by = "person_id") %>%
   relocate(records_2024, .before = "spp_2024") %>%
-  relocate(records_2025, .before = "spp_2025")
+  relocate(records_2025, .before = "spp_2025") %>%
+  relocate(records_2026, .before = "spp_2026")
 
 # Add information about site locations (since information about observers
 # location/address was rarely reported)
@@ -380,5 +383,5 @@ persons_merge <- person_tx %>%
 
 # Write to file
 write.csv(persons_merge, 
-          "data/ttr-tx-observer-summary-wy20242025.csv",
+          "data/ttr-tx-observer-summary-wy20242026.csv",
           row.names = FALSE)
