@@ -8,3 +8,4 @@ data/iNat/[0-9]*.zip
 
 # Zip files with original daymet data
 data/climate/*.zip
+.positai
