@@ -24,16 +24,11 @@ require(lubridate)
 require(stringr)
 require(dplyr)
 require(tidyr)
-# require(sf)
 require(terra)
 require(ggplot2)
 require(leaflet)
-# require(map)
-# require(maptiles)
 require(tidyterra)
-require(jsonlite)
 require(knitr)
-require(kableExtra)
 
 # Logical indicating whether to re-download data
 update_data <- FALSE
