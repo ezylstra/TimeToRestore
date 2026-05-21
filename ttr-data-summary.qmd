@@ -213,14 +213,8 @@ df <- read.csv(data_filename) %>%
 
 ```{r data-cleanup}
 
-# Restrict to years 2013-present, because in earlier years different protocols/
-# intensity categories were used. There were also many fewer observations in
-# those early years
-df <- df %>%
-  filter(yr > 2012)
-
 # Remove any observations with phenophase_status = -1 (even if intensity value
-# was reported). This is <0.5% of observations.
+# was reported). This is <1% of observations.
 df <- df %>%
   filter(phenophase_status != -1)
 
@@ -243,7 +237,7 @@ df <- df %>%
     .default = NA)
   )
 # Check that status equals 1 if there's an intensity value
-# count(status, phenophase_status, midpoint)
+# count(df, phenophase_status, midpoint)
 
 # Clean up columns, column names
 df <- df %>%
@@ -258,5 +252,205 @@ df <- df %>%
          doy = day_of_year,
          status = phenophase_status)
 
+# Just going to look at flowering data for now
+df <- df %>%
+  filter(str_detect(php, "flower"))
+```
 
+### Summarizing where flowering data have been collected
+
+Mapping out some potential regions to subset observations in Texas (size indicates number of plants monitored at that site, 2013-2026)
+
+```{r map-potential-regions}
+
+locs <- df %>%
+  # Limit to one observation per plant per day
+  distinct(site, lat, lon, spp_id, spp, id, doy, obsdate, yr, state) %>%
+  group_by(state, site, lat, lon) %>%
+  summarize(n_spp = n_distinct(spp),
+            n_plants = n_distinct(id),
+            n_obs = n(),
+            n_obs_2325 = sum(yr %in% 2023:2025),
+            .groups = "drop") %>%
+  data.frame()
+
+# Site = no. plants  
+map_nplants <- locs %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~lon,
+    lat = ~lat,
+    weight = 2,
+    radius = ~n_plants)
+
+# Size = no. observations in 2023-2025 (handfull of dominant sites!)
+map_nobs <- locs %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~lon,
+    lat = ~lat,
+    weight = 2,
+    radius = ~n_obs_2325/50)
+
+# What should regions be?
+# States: NM, OK, 
+# All of LA? (only a few obs in northern half). Lots of observations along
+  # the coast in MS and AL that might be helpful.
+# TX: Houston area: 29.736183, -95.332086
+# TX: Austin - San Antonio area (include a couple big sites west of Waco?)
+  # San Antonio: 29.432180, -98.488961
+  # Austin: 30.271591, -97.735506
+  # Between (San Marcos): 29.892405, -98.039982
+# TX: Ft Worth/Dallas area: 32.771473, -96.996293
+tx_cities <- data.frame(
+  city = c("Houston", "Austin", "San Antonio", "San Marcos", "Dallas"),
+  lat = c(29.761647, 30.271591, 29.447646, 29.892405, 32.771473),
+  lon = c(-95.391512, -97.735506, -98.605101, -98.039982, -96.996293)
+)
+
+# Testing out some 100-km radius areas in TX
+locs %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    data = filter(locs, state %in% c("LA", "TX", "NM", "OK")),
+    lng = ~lon,
+    lat = ~lat,
+    weight = 2,
+    radius = ~n_plants) %>%
+  addCircleMarkers(
+    data = filter(locs, !state %in% c("LA", "TX", "NM", "OK")),
+    lng = ~lon,
+    lat = ~lat,
+    weight = 2,
+    color = "gray",
+    radius = ~n_plants) %>%
+  addCircles(
+    data = filter(tx_cities, city != "San Marcos"),
+    lat = ~lat,
+    lng = ~lon,
+    weight = 2,
+    radius = 100000,
+    color = "red", 
+    fill = NA)
+
+map_nobs_regions <- locs %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~lon,
+    lat = ~lat,
+    weight = 2,
+    color = "purple",
+    radius = ~n_obs_2325/50) %>%
+  addCircles(
+    data = filter(tx_cities, city != "San Marcos"),
+    lat = ~lat,
+    lng = ~lon,
+    weight = 2,
+    radius = 100000,
+    color = "red")
+```
+
+\
+
+Decided on 3 regions
+```{r finalize-regions}
+
+# Create buffers and merge the Austin/San Antonio buffers
+tx_citiesv <- tx_cities %>% 
+  filter(city != "San Marcos") %>%
+  vect(geom = c("lon", "lat"), "epsg:4326")
+tx_regions <- buffer(tx_citiesv, width = 100000)
+tx_regions <- aggregate(tx_regions) %>% disagg()
+
+# Find which point each dissolved polygon overlaps with
+overlap_matrix <- relate(tx_regions, tx_citiesv, relation = "intersects")
+# For each dissolved polygon, get the index of the first matching point
+first_match <- apply(overlap_matrix, 1, function(x) which(x)[1])
+# Subset points by those indices to get attributes
+attrs <- as.data.frame(tx_citiesv)[first_match, ]
+# Attach attributes to dissolved polygons
+values(tx_regions) <- attrs
+# Rename attribute
+names(tx_regions) <- "region"
+# Check:
+# ggplot() +
+#   geom_spatvector(data = tx_regions, aes(fill = region))
+
+# Create a region assignment for each location
+locsv <- vect(locs, geom = c("lon", "lat"), "epsg:4326") 
+regions <- terra::extract(tx_regions, locsv)
+locs$region <- regions$region
+
+locs <- locs %>%
+  mutate(state4 = ifelse(state %in% c("LA", "TX", "NM", "OK"), 1, 0),
+         state5 = ifelse(state4 == 0, "Outside", state))
+
+# Map check:
+ggplot() +
+  geom_spatvector(data = subset(states, states$STUSPS %in% c("LA", "TX", "NM", "OK")),
+                  fill = "white") +
+  geom_spatvector(data = tx_regions, color = "red", fill = NA) +
+  geom_point(data = filter(locs, state %in% c("LA", "TX", "NM", "OK")),
+                           aes(x = lon, y = lat, color = region)) +
+  labs(color = "Region") +
+  theme(axis.title = element_blank())
+
+# Summarize information for each state:
+state_summary <- locs %>% 
+  group_by(state5) %>%
+  summarize(sites = n(),
+            plants = sum(n_plants),
+            obs = sum(n_obs_2325)) %>%
+  data.frame()
+
+# Summarize information for each region:
+region_summary <- locs %>% 
+  group_by(region) %>%
+  summarize(sites = n(),
+            plants = sum(n_plants),
+            obs = sum(n_obs_2325)) %>%
+  data.frame()
+```
+
+Flowering data by state (inside/outside 4-state area)
+
+```{r state-summary}
+
+state_summary %>%
+  mutate(state5 = factor(state5, levels = c("LA", "NM", "OK", "TX", "Outside"))) %>%
+  arrange(state5) %>%
+  kable(col.names = c("Location", "Total no. sites", "Total no. plants",
+                      "No. observations (2023-2025)"))
+
+```
+
+\
+
+Flowering data in each Texas region (vs everywhere else)
+
+```{r region-summary}
+
+region_summary %>%
+  kable(col.names = c("Region", "Total no. sites", "Total no. plants",
+                      "No. observations (2023-2025)"))
+
+```
+
+```{r save}
+
+# Attach region information to flowering data
+df <- df %>%
+  left_join(select(locs, site, region, state4, state5), by = "site")
+
+# Write observation data and region boundaries to file
+flowers_filename <- "data/status-intensity-flowers-May2026.csv"
+
+if (!file.exists(flowers_filename) | update_data == TRUE) {
+  write.csv(df, "data/status-intensity-flowers-May2026.csv", row.names = FALSE)
+  writeVector(tx_regions, "data/tx-regions/tx-regions.shp")
+}
 ```
