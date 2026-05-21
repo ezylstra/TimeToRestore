@@ -1,0 +1,262 @@
+---
+title: "Time to Restore - Summary of Available Data"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+author: "Erin Zylstra"
+execute: 
+  echo: false
+  error: false
+  warning: false
+  message: false
+format:
+  html:
+    embed-resources: false
+    fig-cap-location: top
+    page-layout: full
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r packages-settings}
+
+require(rnpn)
+require(lubridate)
+require(stringr)
+require(dplyr)
+require(tidyr)
+# require(sf)
+require(terra)
+require(ggplot2)
+require(leaflet)
+# require(map)
+# require(maptiles)
+require(tidyterra)
+require(jsonlite)
+require(knitr)
+require(kableExtra)
+
+# Logical indicating whether to re-download data
+update_data <- FALSE
+```
+
+### Identifying priority species
+
+Used list of priority species based on: TimeToRestore_AllPrioritySpecies_2024 [google sheet](https://docs.google.com/spreadsheets/d/1NnuTGT7OZuA9WGD0cg29d3INNV0n_x9C/edit?gid=794771851#gid=794771851) (extracted on 2 April 2025) and made the following changes:
+
+- Corrected the spelling of one genus (*Vernonia*) and one species (*cespitosa*)
+
+- Updated scientific and common names based on ITIS for mistflower (*Conoclinium*), basket-flower (*Centaurea*), and *Lantana*; will use the common name listed in ITIS/NPN data base for these species imoving forward.
+
+- Using the common name listed in NPN database for *Sambucus nigra* and *Passiflora incarnata*, which were each listed twice in the googlesheet under two different common names.
+
+```{r priority-spp}
+#| code-fold: true
+
+# Load list of priority species
+spp_list <- read.csv("data/ttr-priorityspecies-20250402.csv", 
+                     na.strings = c(NA, ""))
+spp_list <- spp_list %>%
+  mutate(across(c(common_name, scientific_name), str_trim)) %>%
+  # Edit spelling of one genus (Vernonia) and one species (cespitosa)
+  # Update species based on ITIS for mistflower (Conoclinium), 
+  # basket-flower (Centaurea), and Lantana
+  mutate(scientific_name = case_when(
+    scientific_name == "Oenothera caespitosa" ~ "Oenothera cespitosa",
+    scientific_name == "Veronia gigantea" ~ "Vernonia gigantea",
+    scientific_name == "Conoclinium greggii" ~ "Conoclinium dissectum",
+    scientific_name == "Centaurea americana" ~ "Plectocephalus americanus",
+    scientific_name == "Lantana urticoides" ~ "Lantana horrida", 
+    .default = scientific_name
+  )) %>%
+  rename(ttr_common_name = common_name)
+
+# Load information about NN species
+nn_spp <- npn_species() %>% data.frame()
+nn_spp <- nn_spp %>%
+  filter(kingdom == "Plantae") %>%
+  select(species_id, common_name, genus, species, functional_type) %>%
+  mutate(scientific_name = paste(genus, species))
+
+# Find NN info based on scientific name of priority species (inconsistent 
+# capitalization in priority list and a duplicate in NN database [Canada goldenrod])
+spp_list <- spp_list %>%
+  left_join(nn_spp, by = "scientific_name")
+# Check that all priority species have a match in NN database
+  # filter(spp_list, is.na(species_id))
+# Are there any duplicates? Yes
+  # count(spp_list, species_id) %>% filter(n > 1)
+  # filter(spp_list, species_id == 90)
+  # In priority list, Sambucus nigra listed as both black and common elderberry
+  # filter(spp_list, species_id == 182)
+  # In priority list, Passiflora incarnata listed as both purple passionflower and Maypop
+
+# Remove entries for TTR priority species whose common name doesn't match NPN
+spp_list <- spp_list %>%
+  filter(!ttr_common_name %in% c("Maypop", "Common elderberry"))
+```
+
+This left us with `r nrow(spp_list)` priority species.
+
+```{r load-states}
+
+# File location
+states <- vect("data/states/cb_2017_us_state_500k.shp")
+
+```
+
+```{r download}
+#| code-fold: true
+#| output: false
+
+# First, check that all species have these 4 flower/fruit phenophases
+phenophases_byspp <- npn_phenophases_by_species(
+  species_ids = c(spp_list$species_id),
+  date = "2026-04-01"
+) %>% data.frame()
+phenophases_byspp %>%
+  group_by(species_id, species_name) %>%
+  summarize(p500 = ifelse(500 %in% phenophase_id, 1, 0),
+            p501 = ifelse(501 %in% phenophase_id, 1, 0),
+            p516 = ifelse(516 %in% phenophase_id, 1, 0),
+            p390 = ifelse(390 %in% phenophase_id, 1, 0),
+            .groups = "drop") %>%
+  rowwise() %>%
+  filter(sum(c_across(p500:p390)) < 4)
+# All species use these 4 phenophases
+
+# Will skip any leaves phenophases for now, though we may want to add them back
+# in, if only for Asclepias spp.
+
+# Download and format (or load existing) NPN data for priority plant species --#
+  
+# We will focus on observations from 4 states (LA, NM, OK, TX)
+# We'll also restrict observations to those collected in 2013 to present, since
+# different protocols and intensity categories will used for some species before
+# then.
+
+phenophases <- c(500, 501, 516, 390)
+states4 <- c("LA", "NM", "OK", "TX")
+years <- 2013:2026
+  # Note: we could be missing observations in the four states if we use
+  # the states argument in the download function because sometimes the state 
+  # field is missing or incorrect. Best to download all records for species and
+  # fixing/imputing state, and then filtering by state.
+
+data_filename <- "data/status-intensity-May2026.csv"
+
+if (!file.exists(data_filename) | update_data == TRUE) {
+  
+  # Download flowering, fruiting data including all years and not just years 
+  # when TTR project existed (to take advantage of all observations)
+  status_dl <- npn_download_status_data(
+    request_source = "erinz",
+    years = years,
+    species_ids = spp_list$species_id,
+    phenophase_ids= phenophases,
+    additional_fields = c("observedby_person_id",
+                          "partner_group",
+                          "site_name"))
+  status_dl <- data.frame(status_dl)
+  
+  # Format data
+  status <- status_dl %>%
+    mutate(obsdate = ymd(observation_date),
+           yr = year(obsdate),
+           php = case_when(
+             phenophase_id == 500 ~ "flower",
+             phenophase_id == 501 ~ "open flower",
+             phenophase_id == 516 ~ "fruit",
+             phenophase_id == 390 ~ "ripe fruit")) %>%
+    select(-c(update_datetime, elevation_in_meters, genus, species, kingdom,
+              phenophase_description, abundance_value, observation_date)) %>%
+    rename(person_id = observedby_person_id,
+           lat = latitude,
+           lon = longitude)
+  
+  # Some observations missing state ID. Will use a shapefile to get an assigned
+  # state for each site and use that moving forward
+  state_fill <- status %>%
+    select(site_id, lon, lat, state) %>%
+    distinct()
+  state_fillv <- vect(state_fill, 
+                      geom = c("lon", "lat"), 
+                      crs = "epsg:4326")
+  state_new <- terra::extract(states, state_fillv)
+  state_fill <- cbind(state_fill, state_new = state_new$STUSPS)
+  # check:
+  # count(state_fill, state, state_new) %>%
+  #   mutate(same = ifelse(state == state_new, 1, 0)) %>%
+  #   arrange(same)
+  
+  #### Need to decide whether we want to retain observations of these species
+  #### in just the 4-state area or whether we want to expand that a little bit. 
+  #### One option would be to widen the region in each direction, so include:
+  #### AZ, UT, CO, KS, MO, AR, MS, AL (in addition to 4 focal states). 
+  region <- c(states4, "AZ", "UT", "CO", "KS", "MO", "AR", "MS", "AL")
+  
+  # Attach new state labels and exclude observations that aren't in the 4 states
+  status <- status %>%
+    left_join(select(state_fill, site_id, state_new), by = "site_id") %>%
+    select(-state) %>%
+    rename(state = state_new) %>%
+    filter(!is.na(state) & state %in% region)
+  
+  # Write to file
+  write.csv(status, data_filename, row.names = FALSE)
+  # Remove objects
+  rm(status, status_dl)
+}
+
+df <- read.csv(data_filename) %>%
+  mutate(obsdate = ymd(obsdate))
+```
+
+```{r data-cleanup}
+
+# Restrict to years 2013-present, because in earlier years different protocols/
+# intensity categories were used. There were also many fewer observations in
+# those early years
+df <- df %>%
+  filter(yr > 2012)
+
+# Remove any observations with phenophase_status = -1 (even if intensity value
+# was reported). This is <0.5% of observations.
+df <- df %>%
+  filter(phenophase_status != -1)
+
+# Convert intensity value ranges to midpoints
+df <- df %>%
+  mutate(midpoint = case_when(
+    intensity_value == "Less than 3" ~ 2, 
+    intensity_value == "3 to 10" ~ ceiling(mean(c(3, 10))), 
+    intensity_value == "11 to 100" ~ ceiling(mean(c(11, 100))), 
+    intensity_value == "101 to 1,000" ~ ceiling(mean(c(101, 1000))), 
+    intensity_value == "1,001 to 10,000" ~ ceiling(mean(c(1001, 10000))), 
+    intensity_value == "More than 1,000" ~ 1001, 
+    intensity_value == "More than 10,000" ~ 10001, 
+    intensity_value == "Less than 5%" ~ 0.03, 
+    intensity_value == "5-24%" ~ ceiling(mean(c(5, 24))) / 100, 
+    intensity_value == "25-49%" ~ ceiling(mean(c(25, 49))) / 100, 
+    intensity_value == "50-74%" ~ ceiling(mean(c(50, 74))) / 100, 
+    intensity_value == "75-94%" ~ ceiling(mean(c(75, 94))) / 100, 
+    intensity_value == "95% or more" ~ 0.95,
+    .default = NA)
+  )
+# Check that status equals 1 if there's an intensity value
+# count(status, phenophase_status, midpoint)
+
+# Clean up columns, column names
+df <- df %>%
+  select(-intensity_category_id) %>%
+  rename(person = person_id,
+         lpp = partner_group,
+         site = site_id,
+         spp_id = species_id,
+         spp = common_name, 
+         id = individual_id, 
+         php_id = phenophase_id, 
+         doy = day_of_year,
+         status = phenophase_status)
+
+
+```
