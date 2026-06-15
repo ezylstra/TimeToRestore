@@ -17,12 +17,46 @@ library(RColorBrewer)
 df <- read.csv("data/status-intensity-flowers-May2026.csv")
 df <- df %>%
   mutate(obsdate = ymd(obsdate))
-# For now limit to 4 state area
-df <- filter(df, state4 == 1)
+# For now limit to 4 state area and 2025-2026
+df <- df %>%
+  filter(state4 == 1) %>%
+  filter(yr >= 2025)
+
+# If there's more than one observation of a plant on a given date, select one 
+# with positive status and (higher) intensity value
+df <- df %>%
+  arrange(id, obsdate, php_id, desc(status), desc(midpoint)) %>%
+  distinct(id, obsdate, php_id, .keep_all = TRUE)
+
+# Put all data for a plant, date in the same row (wide form)
+dfw <- df %>%
+  select(-c(observation_id, php)) %>%
+  pivot_wider(names_from = c(php_id),
+              values_from = c(status, intensity_value, midpoint)) %>%
+  data.frame()
+
+# If flower = 0, then open flower must be 0. Remove observations with open
+# flower = 1 and change any open flower = NA to 0.
+dfw <- dfw %>%
+  filter(!(!is.na(status_500) & !is.na(status_501) & status_500 == 0 & status_501 == 1)) %>%
+  mutate(status_501 = ifelse(!is.na(status_500) & status_500 == 0, 0, status_501))
+
+# If open flower = 1, then flower must be 1. Change any that are NA.
+dfw <- dfw %>%
+  mutate(status_500 = ifelse(!is.na(status_501) & status_501 == 1, 1, status_500))
+
+# Finally, change any midpoint values to 0 when status is 0
+dfw <- dfw %>%
+  mutate(midpoint_500 = ifelse(!is.na(status_500) & status_500 == 0, 
+                               0, midpoint_500)) %>%
+  mutate(midpoint_501 = ifelse(!is.na(status_501) & status_501 == 0,
+                               0, midpoint_501))
 
 # Create table with location options
-loc_options <- distinct(df, state, region) %>%
-  mutate(region = ifelse(is.na(region), "Statewide", region))
+loc_options <- distinct(dfw, state, region) %>%
+  mutate(region = ifelse(is.na(region), "Statewide", region)) %>%
+  rbind(data.frame(state = "SC states (4)", 
+                   region = "Entire SC region"))
 
 # ui --------------------------------------------------------------------------#
 
@@ -43,34 +77,35 @@ ui <- page_navbar(
             br(),
             selectInput(inputId = "state",
                         label = "State",
-                        choices = unique(loc_options$state),
-                        selected = "TX"),
-            uiOutput("loc"),
+                        choices = c(unique(loc_options$state), ""),
+                        selected = ""),
+            uiOutput("locChoices"),
             radioButtons(inputId = "php", 
                          label = "Phenophase",
                          choices = c("Flowers" = "flower", 
-                                     "Open flowers" = "open flower"),
+                                     "Open flowers" = "open"),
                          inline = TRUE),
-            radioButtons(inputId = "vistype",
-                         label = "Visualization type",
-                         choices = c("Bar chart",
-                                     "Bubble plot",
-                                     "Heat map")),
-            uiOutput("species"),
             selectInput(inputId = "years",
                         label = "Years",
                         choices = c("2025-2026 (combined)", "2025", "2026"),
                         selected = "2025-2026 (combined)"),
             radioButtons(inputId = "period",
                          label = "Summarization period",
-                         choices = c("Biweekly" = "biweekly",
-                                     "Weekly" = "weekly"))
+                         choices = c("Weekly" = "weekly",
+                                     "Biweekly" = "biweekly")),
+            uiOutput("speciesChoices"),
+            radioButtons(inputId = "vistype",
+                         label = "Visualization type",
+                         choices = c("Bar chart",
+                                     "Bubble plot",
+                                     "Heat map"))
           )
         )
     )
   ),
   fillable = "Map",
-  nav_panel(title = "Data summaries", 
+  nav_panel(title = "Data summaries",
+            # tableOutput(outputId = "table"),
             plotOutput(outputId = "plot")),
   nav_panel(title = "Map", 
             leafletOutput(outputId = "map"),
@@ -82,13 +117,287 @@ ui <- page_navbar(
 server <- function(input, output) {
 
   loc_table <- reactive({
+    req(input$state != "")
     loc_options %>% filter(state == input$state)
   })
 
-  output$loc <- renderUI({
-    selectizeInput("locInput", "Location",
-                   choices = unique(loc_table()$region))
+  output$locChoices <- renderUI({
+    selectInput(inputId = "loc", 
+                label = "Location",
+                choices = c(unique(loc_table()$region), ""),
+                selected = "")
   })
+
+  # Filter by location
+  df_filteredloc <- reactive({
+    req(input$loc, input$loc != "")
+    if (input$loc == "Entire SC region") {
+      dfw 
+    } else if (input$loc == "Statewide") {
+      dfw %>% filter(state == input$state)
+    } else {
+      dfw %>% filter(region == input$loc)
+    }
+  })
+
+  # Filter by year
+  df_filteredyr <- reactive({
+    if (input$years == "2025-2026 (combined)") {
+      df_filteredloc()
+    } else {
+      df_filteredloc() %>%
+        filter(yr == as.numeric(input$years))
+    }
+  })
+
+  # Filter by phenophase. Rename the relevant status/midpoint columns to
+  # generic names so all downstream code is phenophase-agnostic
+  df_filteredphp <- reactive({
+    if (input$php == "flower") {
+      df_filteredyr() %>%
+        rename(status = status_500,
+               midpoint = midpoint_500)
+    } else {
+      df_filteredyr() %>%
+        rename(status = status_501,
+               midpoint = midpoint_501)
+    }
+  })
+
+  # Find species that have sufficient data (species with >= 10 plants, each with
+  # >= 5 observations over years of interest)
+  speciessubset <- reactive({
+    df_filteredphp() %>%
+      group_by(id) %>%
+      mutate(nobs = n()) %>%
+      ungroup() %>%
+      group_by(spp) %>%
+      summarize(nplants = n_distinct(id),
+                nplants5 = n_distinct(id[nobs >= 5])) %>%
+      data.frame() %>%
+      filter(nplants5 >= 10)
+  })
+
+  output$speciesChoices <- renderUI({
+    selectInput(inputId = "species",
+                label = "Species",
+                choices = unique(speciessubset()$spp),
+                multiple = TRUE)
+  })
+
+  # Filter to selected species. Guard against NULL/empty selection
+  # and assign week numbers
+  df_filteredspp <- reactive({
+    req(input$species)
+    df_filteredphp() %>%
+      filter(spp %in% input$species) %>%
+      mutate(wk = week(obsdate)) %>%
+      # Remove observations in week 53 (Dec 31 [and Dec 30 in leap years])
+      filter(wk < 53) %>%
+      mutate(wk2 = ifelse(wk%%2 == 0, wk - 1, wk))
+  })
+
+  # Collapse site/species to one row per site-species, jitter coords once
+  map_frame <- reactive({
+    obslocs <- df_filteredspp() %>%
+      group_by(site, site_name, lat, lon, spp) %>%
+      summarize(plants = n_distinct(id), .groups = "drop") %>%
+      data.frame()
+
+    obslocs %>%
+      st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
+      st_jitter(factor = 0.0001) %>%
+      cbind(st_coordinates(.)) %>%   # extract jittered coords from THIS object
+      rename(lon = X, lat = Y) %>%
+      st_drop_geometry()
+  })
+
+  # Derive palette from the actual species present in map_frame
+  spp_colors <- reactive({
+    spp_list <- unique(map_frame()$spp)
+    n <- length(spp_list)
+    req(n >= 1) # nothing to draw if no species have sufficient data
+    # brewer.pal needs n >= 3; pad/trim as needed
+    pal <- brewer.pal(max(3, n), "Paired")[seq_len(n)]
+    setNames(pal, spp_list) # named vector: spp -> color
+  })
+
+  # Create map
+  output$map <- renderLeaflet({
+    mf    <- map_frame()
+    cols  <- spp_colors()
+    spp_list <- names(cols)
+
+    m <- leaflet(data = mf) %>%
+      addTiles(options = tileOptions(opacity = 0.6))
+
+    # seq_along() avoids the 1:0 trap when spp_list is empty
+    for (i in seq_along(spp_list)) {
+      m <- m %>% addCircleMarkers(
+        lng = ~lon,
+        lat = ~lat,
+        data = filter(mf, spp == spp_list[i]),
+        group = spp_list[i],
+        radius = 5,
+        color = "black",
+        fillColor = cols[[i]],
+        fillOpacity = 0.9,
+        stroke = TRUE,
+        weight = 2,
+        popup = ~paste0(spp, "<br>",
+                        "Site ID: ", site, "<br>",
+                        "No. plants: ", plants))
+    }
+
+    m %>%
+      addLayersControl(overlayGroups = spp_list,
+                       options = layersControlOptions(collapse = FALSE)) %>%
+      addLegend(position  = "bottomright",
+                colors    = unname(cols),
+                labels    = spp_list,
+                opacity   = 0.9)
+  })
+
+  # Calculate proportions after keeping just one observation of each plant, each
+  # week or 2-week period. Sort so the most advanced phenophase gets kept (if 
+  # more than one value in period)
+  props <- reactive({
+    if (input$period == "weekly") {
+      props_temp <- df_filteredspp() %>%
+        mutate(period = wk) %>%
+        mutate(wk_doy4 = (period * 7) - 3) %>%
+        mutate(wk_date4 = parse_date_time(x = paste(2025, wk_doy4), 
+                                          orders = "yj"))
+    } else {
+      props_temp <- df_filteredspp() %>%
+        mutate(period = wk2) %>%
+        mutate(wk_doy4 = period * 7) %>%
+        mutate(wk_date4 = parse_date_time(x = paste(2025, wk_doy4), 
+                                          orders = "yj"))
+    }
+    
+    # Keeping year in so if we're combining info across years, we retain an 
+    # observation of a plant in each year
+    props_temp %>%
+      filter(!is.na(status)) %>%
+      arrange(id, yr, period, desc(status), desc(midpoint)) %>% 
+      distinct(id, yr, period, .keep_all = TRUE) %>%
+      group_by(spp, period, wk_date4) %>%
+      summarize(nobs = n(),
+                nyes = sum(status),
+                prop = nyes/nobs,
+                .groups = "drop") %>%
+      data.frame() %>% 
+      mutate(obs_group = ifelse(nobs < 5, "low", "sufficient"))
+  })
+
+  # Plot aesthetics
+  text_size <- 14
+  yaxis_bubble <- reactive({
+    if (input$php == "flower") {
+      "Proportion with flowers"
+    } else {
+      "Proportion with open flowers"
+    }
+  })
+  fill_bar <- reactive({
+    if (input$php == "flower") {
+      "Flowers"
+    } else {
+      "Open flowers"
+    }
+  })
+  bar_width <- reactive({
+    if (input$period == "weekly") {3} else {7}
+  })
+  
+  # Create function for size breaks that include low values (for bubble plot)
+  pretty_breaks <- function(x, n = 3) {
+    pr <- pretty(x, n)
+    pr <- pr[pr > 0]
+    pr <- sort(unique(c(1, 4, pr)))
+    return(pr)
+  }
+  
+  # Bar chart
+  output$plot <- renderPlot(
+    height = function() max(300, 250 * length(input$species)),
+    {
+      req(input$species)
+      p_data <- props()
+      
+      if (input$vistype == "Bar chart") {
+        p_data %>%
+          ggplot(aes(x = wk_date4, y = nobs)) +
+          geom_bar(aes(alpha = obs_group, fill = "No", color = "No"),
+                   stat = "identity", width = bar_width()) +
+          geom_bar(aes(y = nyes, alpha = obs_group, fill = "Yes", color = "Yes"),
+                   stat = "identity", width = bar_width()) +
+          geom_hline(yintercept = 5, linetype = "dotted", color = "gray30", linewidth = 0.8) +
+          geom_hline(yintercept = 10, linetype = "dotted", color = "gray30", linewidth = 0.8) +
+          facet_wrap(~ spp, ncol = 1, scales = "free_x") +
+          scale_alpha_manual(values = c("low" = 0.5, "sufficient" = 1),
+                             guide = "none") +   # suppress separate alpha legend
+          scale_fill_manual(values = c("No" = "gray", "Yes" = "steelblue3")) +
+          scale_color_manual(values = c("No" = "gray", "Yes" = "steelblue3")) +
+          scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2025-12-31")),
+                       expand = 0.02,
+                       date_breaks = "1 month",
+                       date_labels = "%e %b") +
+          labs(x = "Date", y = "No. observations", fill = fill_bar(), color = fill_bar()) +
+          theme_bw() +
+          theme(legend.position = "top",
+                axis.text = element_text(size = text_size),
+                axis.title = element_text(size = text_size),
+                legend.text = element_text(size = text_size),
+                legend.title = element_text(size = text_size),
+                strip.text = element_text(size = text_size + 1),
+                panel.grid.minor = element_blank(),
+                strip.background = element_rect(fill = "darkseagreen"))
+        
+      } else if (input$vistype == "Bubble plot") {
+
+        # Compute breaks the same way ggplot will: apply pretty_breaks to the
+        # data range, then drop anything outside it (mimicking ggplot's behavior)
+        data_range <- range(p_data$nobs, na.rm = TRUE)
+        br <- pretty_breaks(p_data$nobs)
+        br <- br[br >= data_range[1] & br <= data_range[2]]  # keep only in-range breaks
+        
+        aes_fill  <- ifelse(br < 5, "white",   "steelblue3")
+        # aes_color <- ifelse(br < 5, "salmon3", "steelblue3")
+        
+        p_data %>%
+          ggplot(aes(x = wk_date4, y = prop)) +
+          geom_line(color = "gray50") +
+          geom_point(aes(size = nobs, fill = obs_group), color = "steelblue3",
+                     shape = 21) +
+          scale_fill_manual(values = c("low" = "white", "sufficient" = "steelblue3"),
+                            guide = "none") +    # suppress separate fill legend
+          facet_wrap(~ spp, ncol = 1, scales = "free_x") +
+          scale_size_continuous(range = c(2, 10),
+                                breaks = br,
+                                guide = guide_legend(
+                                  title = "No. observations",
+                                  nrow = 1,
+                                  override.aes = list(fill = aes_fill))
+          ) +
+          scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2025-12-31")),
+                       expand = 0.02,
+                       date_breaks = "1 month",
+                       date_labels = "%e %b") +
+          scale_y_continuous(limits = c(-0.05, 1.05)) +
+          labs(x = "Date", y = yaxis_bubble()) +
+          theme(legend.position = "top",
+                axis.text = element_text(size = text_size),
+                axis.title = element_text(size = text_size),
+                legend.text = element_text(size = text_size),
+                legend.title = element_text(size = text_size),
+                strip.text = element_text(size = text_size + 1),
+                panel.grid.minor = element_blank(),
+                strip.background = element_rect(fill = "darkseagreen"))
+      }
+    }
+  )
 
 }
 
