@@ -8,9 +8,6 @@ library(sf)
 library(ggplot2)
 library(leaflet)
 library(RColorBrewer)
-# library(DT)
-# library(glue)
-# library(shinycssloaders)
 
 # Load/format observation data ------------------------------------------------#
 
@@ -310,7 +307,10 @@ server <- function(input, output) {
   bar_width <- reactive({
     if (input$period == "weekly") {3} else {7}
   })
-  
+  heatmap_width <- reactive({
+    if (input$period == "weekly") {6} else {12}
+  })
+
   # Create function for size breaks that include low values (for bubble plot)
   pretty_breaks <- function(x, n = 3) {
     pr <- pretty(x, n)
@@ -395,10 +395,75 @@ server <- function(input, output) {
                 strip.text = element_text(size = text_size + 1),
                 panel.grid.minor = element_blank(),
                 strip.background = element_rect(fill = "darkseagreen"))
+      
+      } else {
+
+        # Add a dummy column so we can inject an NA key into the legend
+        p_data$na_label <- factor(ifelse(is.na(p_data$prop), 
+                                         "No observations", NA),
+                                  levels = "No observations")
+        
+        p_data %>%
+          ggplot() +
+          geom_bar(aes(x = wk_date4, y = 0.9, fill = prop), stat = "identity",
+                   width = heatmap_width()) +
+          # Invisible geom that exists only to create the legend key
+          geom_tile(aes(x = wk_date4, y = -99, color = na_label),
+                    fill = "white", linewidth = 0.5, width = heatmap_width(), 
+                    height = 0) +
+          scale_fill_gradient(low = "gray95", high = "steelblue3",
+                              na.value = "white",
+                              name = paste(yaxis_bubble(), "    "),
+                              guide = guide_colorbar(order = 1)) +
+          scale_color_manual(
+            values = c("No observations" = "black"),
+            labels = "",
+            name = "No data",
+            guide = guide_legend(
+              order = 2,
+              override.aes = list(
+                fill  = "white",
+                color = "black",
+                size  = 6,
+                shape = 22,
+                linewidth = 0.5
+              )
+            )
+          ) +
+          # new_scale_color() +
+          # geom_vline(xintercept = as.Date(c(paste0("2025-", 1:12, "-01"), "2026-01-01"))) +
+          geom_text(data = filter(p_data, obs_group == "low"),
+                    aes(x = wk_date4, y = 0.95, label = nobs), 
+                    color = "red", fontface = 2, size = 5) +
+          geom_text(data = filter(p_data, obs_group == "sufficient"),
+                    aes(x = wk_date4, y = 0.95, label = nobs), size = 4) +
+          scale_y_continuous(expand = c(0, 0)) +
+          coord_cartesian(ylim = c(0, 1)) +
+          scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2026-01-01")),
+                       expand = 0.02,
+                       date_breaks = "1 month",
+                       date_labels = "%e %b") +
+          facet_wrap(~ spp, ncol = 1, scales = "free_x") +
+          labs(x = "Date") +
+          theme(legend.position = "top",
+                legend.key.width = unit(2.5, "cm"),
+                axis.text.x = element_text(size = text_size),
+                axis.text.y = element_blank(),
+                axis.title.x = element_text(size = text_size),
+                axis.title.y = element_blank(),
+                # axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1),
+                #                                       rep("black", n_x_tick))),
+                axis.ticks.y = element_blank(),
+                panel.background = element_rect(fill = "white"),
+                panel.grid.major = element_blank(),
+                panel.grid.minor = element_blank(),
+                legend.text = element_text(size = text_size),
+                legend.title = element_text(size = text_size),
+                strip.text = element_text(size = text_size + 1),
+                strip.background = element_rect(fill = "darkseagreen"))
       }
     }
   )
-
 }
 
 # run app ---------------------------------------------------------------------#
