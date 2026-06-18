@@ -13,7 +13,12 @@ library(RColorBrewer)
 
 df <- read.csv("data/status-intensity-flowers-May2026.csv")
 df <- df %>%
-  mutate(obsdate = ymd(obsdate))
+  mutate(obsdate = ymd(obsdate)) %>%
+  mutate(region = case_when(
+    region == "Dallas" ~ "Dallas/Ft. Worth",
+    region == "Austin" ~ "Austin/San Antonio",
+    .default = region
+  ))
 # For now limit to 4 state area and 2025-2026
 df <- df %>%
   filter(state4 == 1) %>%
