@@ -8,6 +8,7 @@ library(sf)
 library(ggplot2)
 library(leaflet)
 library(RColorBrewer)
+library(sortable)
 
 # Load/format observation data ------------------------------------------------#
 
@@ -65,7 +66,7 @@ loc_options <- distinct(dfw, state, region) %>%
 ui <- page_navbar(
   title = "Time to Restore",
   sidebar = sidebar(
-    width = "20%",
+    width = "25%",
     div(style = "font-size:90%",
         navset_tab(
           nav_panel(
@@ -94,7 +95,8 @@ ui <- page_navbar(
             radioButtons(inputId = "period",
                          label = "Summarization period",
                          choices = c("Weekly" = "weekly",
-                                     "Biweekly" = "biweekly")),
+                                     "Biweekly" = "biweekly"),
+                         inline = TRUE),
             uiOutput("speciesChoices"),
             radioButtons(inputId = "vistype",
                          label = "Visualization type",
@@ -107,7 +109,6 @@ ui <- page_navbar(
   ),
   fillable = "Map",
   nav_panel(title = "Data summaries",
-            # tableOutput(outputId = "table"),
             plotOutput(outputId = "plot")),
   nav_panel(title = "Map", 
             leafletOutput(outputId = "map"),
@@ -116,7 +117,7 @@ ui <- page_navbar(
 
 # server ----------------------------------------------------------------------#
 
-server <- function(input, output) {
+server <- function(input, output, session) { # add session for observeEvent reset
 
   loc_table <- reactive({
     req(input$state != "")
@@ -180,24 +181,60 @@ server <- function(input, output) {
       filter(nplants5 >= 10)
   })
 
+  # Render a drag-and-drop rank_list instead of a plain selectInput.
+  # Users drag items from the "Available" bucket into "Selected & ordered" to
+  # both choose species and set their facet order in one widget.
+  # TODO: figure out how to left justify this section ####
   output$speciesChoices <- renderUI({
-    selectInput(inputId = "species",
-                label = "Species",
-                choices = unique(speciessubset()$spp),
-                multiple = TRUE)
+    tagList(
+      tags$style(HTML("
+        /* Compress height of species names */
+        .default-sortable .rank-list-item {
+          padding: 3px 8px !important;
+          margin-bottom: 2px !important;
+        }
+        /* Enable scrolling in Available bucket*/
+        #rank-list-species_available {
+          max-height: 200px !important;
+          overflow-y: auto !important;
+        }
+      ")),
+      bucket_list(
+        header = "Species (drag to select & order)",
+        group_name = "species_bucket",
+        orientation = "vertical",
+        add_rank_list(
+          text = "Available",
+          labels = unique(speciessubset()$spp),
+          input_id = "species_available"
+        ),
+        add_rank_list(
+          text = "Selected & ordered",
+          labels = NULL,
+          input_id = "species_order"
+        )
+      )
+    )
   })
 
+  # Reset species_order bucket whenever state, location or year changes
+  # so stale selections from the previous filter context don't carry over.
+  observeEvent(list(input$state, input$loc, input$years), {
+    updateSelectInput(session, "species_order", selected = character(0))
+  }, ignoreInit = TRUE)
+  
   # Filter to selected species. Guard against NULL/empty selection,
   # and against stale selections left over from a previous state/location
   # (e.g. right after switching `state`, input$species may still hold
   # species names that don't exist in the newly-filtered data until the
-  # speciesChoices selectInput above gets rebuilt).
+  # speciesChoices bucket_list above gets rebuilt).
   df_filteredspp <- reactive({
-    req(input$species)
-    valid_species <- intersect(input$species, speciessubset()$spp)
+    req(input$species_order)
+    valid_species <- intersect(input$species_order, speciessubset()$spp)
     req(length(valid_species) > 0)
     df_filteredphp() %>%
       filter(spp %in% valid_species) %>%
+      mutate(spp = factor(spp, levels = valid_species)) %>% 
       mutate(wk = week(obsdate)) %>%
       # Remove observations in week 53 (Dec 31 [and Dec 30 in leap years])
       filter(wk < 53) %>%
@@ -331,9 +368,9 @@ server <- function(input, output) {
   
   # Bar chart
   output$plot <- renderPlot(
-    height = function() max(300, 250 * length(input$species)),
+    height = function() max(300, 250 * length(input$species_order)),
     {
-      req(input$species)
+      req(input$species_order)
       p_data <- props()
       
       if (input$vistype == "Bar chart") {
@@ -343,7 +380,7 @@ server <- function(input, output) {
                    stat = "identity", width = bar_width()) +
           geom_bar(aes(y = nyes, alpha = obs_group, fill = "Yes", color = "Yes"),
                    stat = "identity", width = bar_width()) +
-          geom_hline(yintercept = 5, linetype = "dotted", color = "gray30", linewidth = 0.8) +
+          geom_hline(yintercept = 5, linetype = "dotdash", color = "salmon3", linewidth = 0.8) +
           geom_hline(yintercept = 10, linetype = "dotted", color = "gray30", linewidth = 0.8) +
           facet_wrap(~ spp, ncol = 1, scales = "free_x") +
           scale_alpha_manual(values = c("low" = 0.5, "sufficient" = 1),
@@ -363,8 +400,8 @@ server <- function(input, output) {
                 legend.title = element_text(size = text_size),
                 strip.text = element_text(size = text_size + 1),
                 panel.grid.minor = element_blank(),
-                strip.background = element_rect(fill = "darkseagreen"))
-        
+                strip.background = element_rect(fill = "#b6d3b6"))
+
       } else if (input$vistype == "Bubble plot") {
 
         # Compute breaks the same way ggplot will: apply pretty_breaks to the
@@ -404,7 +441,7 @@ server <- function(input, output) {
                 legend.title = element_text(size = text_size),
                 strip.text = element_text(size = text_size + 1),
                 panel.grid.minor = element_blank(),
-                strip.background = element_rect(fill = "darkseagreen"))
+                strip.background = element_rect(fill = "#b6d3b6"))
       
       } else {
 
@@ -470,7 +507,7 @@ server <- function(input, output) {
                 legend.text = element_text(size = text_size),
                 legend.title = element_text(size = text_size),
                 strip.text = element_text(size = text_size + 1),
-                strip.background = element_rect(fill = "darkseagreen"))
+                strip.background = element_rect(fill = "#b6d3b6"))
       }
     }
   )
