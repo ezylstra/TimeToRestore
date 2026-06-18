@@ -254,7 +254,7 @@ df <- df %>%
 
 ### Summarizing where flowering data have been collected
 
-Mapping out some potential regions to subset observations in Texas (size indicates number of plants monitored at that site, 2013-2026)
+Mapping out some potential regions to subset observations in Texas (size indicates number of plants monitored at that site, 2013 through May 2026)
 
 ```{r map-potential-regions}
 
@@ -352,6 +352,7 @@ map_nobs_regions <- locs %>%
 \
 
 Decided on 3 regions
+
 ```{r finalize-regions}
 
 # Create buffers and merge the Austin/San Antonio buffers
@@ -403,7 +404,8 @@ state_summary <- locs %>%
   data.frame()
 
 # Summarize information for each region:
-region_summary <- locs %>% 
+region_summary <- locs %>%
+  filter(state4 == 1) %>%
   group_by(region) %>%
   summarize(sites = n(),
             plants = sum(n_plants),
@@ -425,7 +427,7 @@ state_summary %>%
 
 \
 
-Flowering data in each Texas region (vs everywhere else)
+Flowering data in each Texas region (vs everywhere else in four south-central states)
 
 ```{r region-summary}
 
