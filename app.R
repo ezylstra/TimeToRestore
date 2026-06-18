@@ -182,12 +182,17 @@ server <- function(input, output) {
                 multiple = TRUE)
   })
 
-  # Filter to selected species. Guard against NULL/empty selection
-  # and assign week numbers
+  # Filter to selected species. Guard against NULL/empty selection,
+  # and against stale selections left over from a previous state/location
+  # (e.g. right after switching `state`, input$species may still hold
+  # species names that don't exist in the newly-filtered data until the
+  # speciesChoices selectInput above gets rebuilt).
   df_filteredspp <- reactive({
     req(input$species)
+    valid_species <- intersect(input$species, speciessubset()$spp)
+    req(length(valid_species) > 0)
     df_filteredphp() %>%
-      filter(spp %in% input$species) %>%
+      filter(spp %in% valid_species) %>%
       mutate(wk = week(obsdate)) %>%
       # Remove observations in week 53 (Dec 31 [and Dec 30 in leap years])
       filter(wk < 53) %>%
