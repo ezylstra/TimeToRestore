@@ -9,6 +9,8 @@ library(ggplot2)
 library(leaflet)
 library(RColorBrewer)
 library(sortable)
+library(grid)
+library(cowplot)
 
 # Load/format observation data ------------------------------------------------#
 
@@ -374,14 +376,13 @@ server <- function(input, output, session) { # add session for observeEvent rese
       p_data <- props()
       
       if (input$vistype == "Bar chart") {
-        p_data %>%
+        p_bar <- p_data %>%
           ggplot(aes(x = wk_date4, y = nobs)) +
           geom_bar(aes(alpha = obs_group, fill = "No", color = "No"),
                    stat = "identity", width = bar_width()) +
           geom_bar(aes(y = nyes, alpha = obs_group, fill = "Yes", color = "Yes"),
                    stat = "identity", width = bar_width()) +
-          geom_hline(yintercept = 5, linetype = "dotdash", color = "salmon3", linewidth = 0.8) +
-          geom_hline(yintercept = 10, linetype = "dotted", color = "gray30", linewidth = 0.8) +
+          geom_hline(yintercept = 5, linetype = "dotted", color = "salmon3", linewidth = 0.8) +
           facet_wrap(~ spp, ncol = 1, scales = "free_x") +
           scale_alpha_manual(values = c("low" = 0.5, "sufficient" = 1),
                              guide = "none") +   # suppress separate alpha legend
@@ -391,7 +392,8 @@ server <- function(input, output, session) { # add session for observeEvent rese
                        expand = 0.02,
                        date_breaks = "1 month",
                        date_labels = "%e %b") +
-          labs(x = "Date", y = "No. observations", fill = fill_bar(), color = fill_bar()) +
+          labs(x = "Date", y = "No. observations", 
+               fill = fill_bar(), color = fill_bar()) +
           theme_bw() +
           theme(legend.position = "top",
                 axis.text = element_text(size = text_size),
@@ -401,6 +403,40 @@ server <- function(input, output, session) { # add session for observeEvent rese
                 strip.text = element_text(size = text_size + 1),
                 panel.grid.minor = element_blank(),
                 strip.background = element_rect(fill = "#b6d3b6"))
+        
+        # Pull the legend out of the plot as its own grob so it can be placed
+        # next to the title instead of stacked above the plot
+        legend_grob <- cowplot::get_legend(p_bar)
+        
+        title_text <- str_wrap(
+          paste0("Red dotted line indicates minimum desired sample size to ",
+                 "evaluate proportions. Periods with fewer samples have ",
+                 "semi-transparent bars."),
+          width = 80
+        )
+        title_grob <- grid::textGrob(
+          title_text,
+          x = 0, hjust = 0,
+          gp = grid::gpar(fontsize = text_size)
+        )
+        
+        # Anchor the legend to the right edge of its cell (instead of the
+        # default center-justify, which can clip a wide legend at the
+        # plot's right edge)
+        legend_panel <- cowplot::ggdraw() +
+          cowplot::draw_grob(legend_grob, x = 0.98, hjust = 1)
+        
+        # Title on the left, legend on the right, in one row
+        top_row <- cowplot::plot_grid(title_grob, legend_grob,
+                                      nrow = 1, rel_widths = c(4, 1))
+        
+        # That row stacked above the plot (with its own legend removed)
+        total_height <- max(300, 250 * length(input$species_order))
+        cowplot::plot_grid(top_row,
+                           p_bar + theme(legend.position = "none"),
+                           ncol = 1, 
+                           rel_heights = c(50/total_height, 
+                                           (total_height - 50)/total_height))
 
       } else if (input$vistype == "Bubble plot") {
 
@@ -409,11 +445,11 @@ server <- function(input, output, session) { # add session for observeEvent rese
         data_range <- range(p_data$nobs, na.rm = TRUE)
         br <- pretty_breaks(p_data$nobs)
         br <- br[br >= data_range[1] & br <= data_range[2]]  # keep only in-range breaks
+        min_sample_size <- 5
         
-        aes_fill  <- ifelse(br < 5, "white",   "steelblue3")
-        # aes_color <- ifelse(br < 5, "salmon3", "steelblue3")
-        
-        p_data %>%
+        aes_fill  <- ifelse(br < min_sample_size, "white",   "steelblue3")
+
+        p_bubble <- p_data %>%
           ggplot(aes(x = wk_date4, y = prop)) +
           geom_line(color = "gray50") +
           geom_point(aes(size = nobs, fill = obs_group), color = "steelblue3",
@@ -442,15 +478,52 @@ server <- function(input, output, session) { # add session for observeEvent rese
                 strip.text = element_text(size = text_size + 1),
                 panel.grid.minor = element_blank(),
                 strip.background = element_rect(fill = "#b6d3b6"))
+        
+        # Pull the legend out of the plot as its own grob so it can be placed
+        # next to the title instead of stacked above the plot
+        legend_grob <- cowplot::get_legend(p_bubble)
+        
+        title_text <- str_wrap(
+          paste0("Size of bubble varies with number of observations. ",
+                 "White-filled bubbles indicate that the proportion is based on ",
+                 "fewer than the minimum desired number of observations (",
+                 min_sample_size, ")."),
+          width = 100
+        )
+        title_grob <- grid::textGrob(
+          title_text,
+          x = 0, hjust = 0,
+          gp = grid::gpar(fontsize = text_size)
+        )
+        
+        # Anchor the legend to the right edge of its cell (instead of the
+        # default center-justify, which can clip a wide legend at the
+        # plot's right edge)
+        legend_panel <- cowplot::ggdraw() +
+          cowplot::draw_grob(legend_grob, x = 0.95, hjust = 1)
+        
+        # Title on the left, legend on the right, in one row
+        top_row <- cowplot::plot_grid(title_grob, legend_grob, 
+                                      nrow = 1, rel_widths = c(2, 1))
+        
+        # That row stacked above the plot (with its own legend removed)
+        total_height <- max(300, 250 * length(input$species_order))
+        cowplot::plot_grid(top_row,
+                           p_bubble + theme(legend.position = "none"),
+                           ncol = 1, 
+                           rel_heights = c(50/total_height, 
+                                           (total_height - 50)/total_height))
       
       } else {
 
+        min_sample_size <- 5
+        
         # Add a dummy column so we can inject an NA key into the legend
         p_data$na_label <- factor(ifelse(is.na(p_data$prop), 
                                          "No observations", NA),
                                   levels = "No observations")
         
-        p_data %>%
+        p_heat <- p_data %>%
           ggplot() +
           geom_bar(aes(x = wk_date4, y = 0.9, fill = prop), stat = "identity",
                    width = heatmap_width()) +
@@ -477,8 +550,6 @@ server <- function(input, output, session) { # add session for observeEvent rese
               )
             )
           ) +
-          # new_scale_color() +
-          # geom_vline(xintercept = as.Date(c(paste0("2025-", 1:12, "-01"), "2026-01-01"))) +
           geom_text(data = filter(p_data, obs_group == "low"),
                     aes(x = wk_date4, y = 0.95, label = nobs), 
                     color = "red", fontface = 2, size = 5) +
@@ -493,13 +564,11 @@ server <- function(input, output, session) { # add session for observeEvent rese
           facet_wrap(~ spp, ncol = 1, scales = "free_x") +
           labs(x = "Date") +
           theme(legend.position = "top",
-                legend.key.width = unit(2.5, "cm"),
+                legend.key.width = unit(1.5, "cm"),
                 axis.text.x = element_text(size = text_size),
                 axis.text.y = element_blank(),
                 axis.title.x = element_text(size = text_size),
                 axis.title.y = element_blank(),
-                # axis.ticks.x = element_line(color = c(rep(NA, n_x_tick - 1),
-                #                                       rep("black", n_x_tick))),
                 axis.ticks.y = element_blank(),
                 panel.background = element_rect(fill = "white"),
                 panel.grid.major = element_blank(),
@@ -508,6 +577,42 @@ server <- function(input, output, session) { # add session for observeEvent rese
                 legend.title = element_text(size = text_size),
                 strip.text = element_text(size = text_size + 1),
                 strip.background = element_rect(fill = "#b6d3b6"))
+        
+        # Pull the legend out of the plot as its own grob so it can be placed
+        # next to the title instead of stacked above the plot
+        legend_grob <- cowplot::get_legend(p_heat)
+        
+        title_text <- str_wrap(
+          paste0("Number of observations each proportion is based on is ",
+                 "listed above the colored bar. Bolded red values indicate ",
+                 "that there are fewer than the minimum desired number of ",
+                 "samples (", min_sample_size, ")."),
+          width = 100
+        )
+        title_grob <- grid::textGrob(
+          title_text,
+          x = 0, hjust = 0,
+          gp = grid::gpar(fontsize = text_size)
+        )
+        
+        # Anchor the legend to the right edge of its cell (instead of the
+        # default center-justify, which can clip a wide legend at the
+        # plot's right edge)
+        legend_panel <- cowplot::ggdraw() +
+          cowplot::draw_grob(legend_grob, x = 0.95, hjust = 1)
+        
+        # Title on the left, legend on the right, in one row
+        top_row <- cowplot::plot_grid(title_grob, legend_grob,
+                                      nrow = 1, rel_widths = c(1.5, 1))
+        
+        # That row stacked above the plot (with its own legend removed)
+        total_height <- max(300, 250 * length(input$species_order))
+        cowplot::plot_grid(top_row,
+                           p_heat + theme(legend.position = "none"),
+                           ncol = 1, 
+                           rel_heights = c(50/total_height, 
+                                           (total_height - 50)/total_height))
+        
       }
     }
   )
