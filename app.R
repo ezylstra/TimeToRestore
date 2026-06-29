@@ -74,8 +74,41 @@ ui <- page_navbar(
           nav_panel(
             title = "Info",
             br(),
-            HTML("This app uses data submitted to <i>USA-NPN Nature's Notebook</i>
-             to ...")
+            HTML("This app uses data submitted since January 2025 to <i>USA-NPN 
+                 Nature's Notebook</i> for species identified as priorities as 
+                 part of the <i>Time to Restore</i> project. Under the 
+                 <i><b>Data summaries</i></b> tab, plots display the weekly or
+                 biweekly proportion of plants with flowers or open flowers 
+                 within the selected area (4-state region, state, or for Texas
+                 only, metropolitan area). Under the <i><b>Map</i></b> tab, a 
+                 map displays the locations of all oberved plants for the 
+                 selected species and region. Users can click on a point to get  
+                 information about the site and number of plants observed."),
+            br(),
+            br(),
+            HTML("<b>Species</b>: Users can select one or more species to  
+                 display, in the order of their choice. Available species for 
+                 the selected region include only those with observations from 
+                 10 or more plants, each with 5 or more observations per 
+                 year."),
+            br(), 
+            br(),
+            HTML("<b>Visualizations</b>: Users can select one of three options  
+                 for displaying weekly/biweekly proportions of plants with  
+                 flowers or open flowers. Each visualization type provides 
+                 indications when sample sizes are problematic (e.g., proportion 
+                 based on <5 observations). A <i><b>bar chart</b></i> is the 
+                 easiest way to visualize variation in effort over time. A
+                 <i><b>bubble plot</b></i> is most effective for visualizing
+                 flowering 'peaks'. A <i><b>heat map</b></i> can be effective 
+                 for comparing phenology among species, but users should use  
+                 with caution given that it is difficult to identify when 
+                 proportions are based on few observations."),
+            br(),
+            br(),
+            HTML("<b>Funding</b>: The <i>Time to Restore</i> project is 
+                 supported by the South Central Climate Adapatation Science  
+                 Center, which is managed by the U.S. Geological Survey.")
           ),
           nav_panel(
             title = "Settings",
