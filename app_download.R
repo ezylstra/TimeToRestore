@@ -66,6 +66,9 @@ loc_options <- distinct(dfw, state, region) %>%
   rbind(data.frame(state = "SC states (4)", 
                    region = "Entire SC region"))
 
+# Desired minimum sample size for calculating proportions
+min_sample_size <- 5
+
 # ui --------------------------------------------------------------------------#
 
 ui <- page_navbar(
@@ -86,8 +89,8 @@ ui <- page_navbar(
                  the <i><b>Data summaries</i></b> page. The user can also view a
                  map with locations of all oberved plants for the selected 
                  species and region on the <i><b>Map</i></b> page. Clicking on a 
-                 point on the map will display information about the site and 
-                 number of plants observed."),
+                 point on the map will display the site ID number and the number 
+                 of plants observed."),
             br(),
             br(),
             HTML("<b>SETTINGS</b>"),
@@ -104,8 +107,10 @@ ui <- page_navbar(
                  for displaying weekly/biweekly proportions of plants with  
                  flowers or open flowers. Each visualization type provides 
                  indications when sample sizes are problematic (e.g., proportion 
-                 based on <5 observations). A <i><b>bar chart</b></i> is the 
-                 easiest way to visualize variation in effort over time. A
+                 based on <",
+                 min_sample_size, 
+                 " observations). A <i><b>bar chart</b></i> is the easiest way
+                 to visualize variation in effort over time. A
                  <i><b>bubble plot</b></i> is most effective for visualizing
                  flowering 'peaks'. A <i><b>heat map</b></i> can be effective 
                  for comparing phenology among species, but users should use  
@@ -139,7 +144,8 @@ ui <- page_navbar(
                          label = "Visualization type",
                          choices = c("Bar chart",
                                      "Bubble plot",
-                                     "Heat map")),
+                                     "Heat map"),
+                         selected = "Bubble plot"),
             downloadButton(outputId = "download_pdf",
                            label = "Download PDF")
           ),
@@ -240,9 +246,8 @@ server <- function(input, output, session) { # add session for observeEvent rese
   })
 
   # Render a drag-and-drop rank_list instead of a plain selectInput.
-  # Users drag items from the "Available" bucket into "Selected & ordered" to
-  # both choose species and set their facet order in one widget.
-  # TODO: figure out how to left justify this section ####
+  # Users drag items from the "Available" bucket into "Selected & ordered"
+  # bucket to both choose species and set their facet order in one widget.
   output$speciesChoices <- renderUI({
     tagList(
       tags$style(HTML("
@@ -255,6 +260,19 @@ server <- function(input, output, session) { # add session for observeEvent rese
         #rank-list-species_available {
           max-height: 200px !important;
           overflow-y: auto !important;
+        }
+        /* Left-justify the whole bucket list (title + boxes) so it lines up 
+        with the other left-aligned sidebar controls */
+        .bucket-list-container {
+          margin-left: 0 !important;
+          padding-left: 0 !important;
+        }
+        .bucket-list-header {
+          margin-left: 0 !important;
+          padding-left: 0 !important;
+        }
+        .rank-list-container {
+          margin-left: 0 !important;
         }
       ")),
       bucket_list(
@@ -299,7 +317,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
       mutate(wk2 = ifelse(wk%%2 == 0, wk - 1, wk))
   })
 
-  # Collapse site/species to one row per site-species, jitter coords once
+  # Collapse site/species to one row per site-species, jitter coords
   map_frame <- reactive({
     obslocs <- df_filteredspp() %>%
       group_by(site, site_name, lat, lon, spp) %>%
@@ -331,7 +349,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
     spp_list <- names(cols)
 
     m <- leaflet(data = mf) %>%
-      addTiles(options = tileOptions(opacity = 0.6))
+      addTiles(options = tileOptions(opacity = 0.8))
 
     # seq_along() avoids the 1:0 trap when spp_list is empty
     for (i in seq_along(spp_list)) {
@@ -390,11 +408,10 @@ server <- function(input, output, session) { # add session for observeEvent rese
                 prop = nyes/nobs,
                 .groups = "drop") %>%
       data.frame() %>% 
-      mutate(obs_group = ifelse(nobs < 5, "low", "sufficient"))
+      mutate(obs_group = ifelse(nobs < min_sample_size, "low", "sufficient"))
   })
 
   # Plot aesthetics
-  # text_size <- 11
   yaxis_bubble <- reactive({
     if (input$php == "flower") {
       "Proportion with flowers"
@@ -420,7 +437,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
   pretty_breaks <- function(x, n = 3) {
     pr <- pretty(x, n)
     pr <- pr[pr > 0]
-    pr <- sort(unique(c(1, 4, pr)))
+    pr <- sort(unique(c(1, min_sample_size - 1, pr)))
     return(pr)
   }
   
@@ -436,6 +453,8 @@ server <- function(input, output, session) { # add session for observeEvent rese
                          date_breaks = "1 month") {
       req(input$species_order)
       p_data <- props()
+      nspp <- length(unique(p_data$spp))
+      wrap_length <- ifelse(nspp < 8, 17, 13)
 
       # Height fraction reserved for the title/legend row above the panels.
       # On screen ("top"), the canvas itself grows with species count, so a
@@ -449,7 +468,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
       } else {
         title_frac <- 0.12
       }
-      
+
       if (input$vistype == "Bar chart") {
         p_bar <- p_data %>%
           ggplot(aes(x = wk_date4, y = nobs)) +
@@ -457,10 +476,6 @@ server <- function(input, output, session) { # add session for observeEvent rese
                    stat = "identity", width = bar_width()) +
           geom_bar(aes(y = nyes, alpha = obs_group, fill = "Yes", color = "Yes"),
                    stat = "identity", width = bar_width()) +
-          geom_hline(yintercept = 5, linetype = "dotted", color = "salmon3", linewidth = 0.8) +
-          facet_wrap(~ spp, ncol = 1, scales = "free_x",
-                     strip.position = strip_side,
-                     labeller = labeller(spp = label_wrap_gen(20))) +
           scale_alpha_manual(values = c("low" = 0.5, "sufficient" = 1),
                              guide = "none") +   # suppress separate alpha legend
           scale_fill_manual(values = c("No" = "gray", "Yes" = "steelblue3")) +
@@ -469,12 +484,13 @@ server <- function(input, output, session) { # add session for observeEvent rese
                        expand = 0.02,
                        date_breaks = date_breaks,
                        date_labels = "%e %b") +
-          labs(x = "Date", y = "No. observations", 
+          labs(y = "No. observations", 
                fill = fill_bar(), color = fill_bar()) +
           theme_bw() +
           theme(legend.position = "top",
                 axis.text = element_text(size = text_size),
-                axis.title = element_text(size = text_size),
+                axis.title.x = element_blank(),
+                axis.title.y = element_text(size = text_size),
                 legend.text = element_text(size = text_size),
                 legend.title = element_text(size = text_size),
                 strip.text = element_text(size = text_size + 1),
@@ -483,15 +499,30 @@ server <- function(input, output, session) { # add session for observeEvent rese
         
         if (strip_side == "top") {
         
+          p_bar <- p_bar +
+            geom_hline(yintercept = min_sample_size, 
+                       linetype = "dotted", color = "salmon3", linewidth = 0.8) +
+            facet_wrap(~ spp, ncol = 1, scales = "free_x",
+                       strip.position = strip_side) +
+            theme(legend.position = "top",
+                  axis.text = element_text(size = text_size),
+                  axis.title.x = element_blank(),
+                  axis.title.y = element_text(size = text_size),
+                  legend.text = element_text(size = text_size),
+                  legend.title = element_text(size = text_size),
+                  strip.text = element_text(size = text_size + 1),
+                  panel.grid.minor = element_blank(),
+                  strip.background = element_rect(fill = "#b6d3b6"))
+          
           # Pull the legend out of the plot as its own grob so it can be placed
           # next to the title instead of stacked above the plot
           legend_grob <- cowplot::get_legend(p_bar)
           
           title_text <- str_wrap(
-            paste0("Red dotted line indicates minimum desired sample size to ",
-                   "evaluate proportions. Periods with fewer samples have ",
-                   "semi-transparent bars."),
-            width = 80
+            paste0("Red dotted line indicates minimum desired sample size (",
+                   min_sample_size, "). ", str_to_sentence(input$period), 
+                   " periods with fewer samples have semi-transparent bars."),
+            width = 65
           )
           title_grob <- grid::textGrob(
             title_text,
@@ -518,13 +549,28 @@ server <- function(input, output, session) { # add session for observeEvent rese
         } else {
           
           p_bar +
+            geom_hline(yintercept = min_sample_size, 
+                       linetype = "dotted", color = "salmon3", linewidth = 0.7) +
+            facet_wrap(~ spp, ncol = 1, scales = "free_x",
+                       strip.position = strip_side,
+                       labeller = labeller(spp = label_wrap_gen(wrap_length))) +
             labs(caption = str_wrap(
-              paste0("Red dotted line indicates minimum desired sample size to ",
-                     "evaluate proportions. Periods with fewer samples have ",
-                     "semi-transparent bars."),
+              paste0("Red dotted line indicates minimum desired sample size (",
+                     min_sample_size, "). ", str_to_sentence(input$period), 
+                     " periods with fewer samples have semi-transparent bars."),
               width = 90)) +
-            theme(plot.caption = element_text(hjust = 0,
-                                              size = text_size))
+            theme(legend.position = "top",
+                  axis.text = element_text(size = text_size),
+                  axis.title.x = element_blank(),
+                  axis.title.y = element_text(size = text_size + 1),
+                  legend.text = element_text(size = text_size),
+                  legend.title = element_text(size = text_size + 1),
+                  strip.text = element_text(size = ifelse(nspp < 8, 
+                                                          text_size + 1,
+                                                          text_size - 1)),
+                  panel.grid.minor = element_blank(),
+                  strip.background = element_rect(fill = "#b6d3b6"),
+                  plot.caption = element_text(hjust = 0, size = text_size + 1))
         }  
 
       } else if (input$vistype == "Bubble plot") {
@@ -534,9 +580,8 @@ server <- function(input, output, session) { # add session for observeEvent rese
         data_range <- range(p_data$nobs, na.rm = TRUE)
         br <- pretty_breaks(p_data$nobs)
         br <- br[br >= data_range[1] & br <= data_range[2]]  # keep only in-range breaks
-        min_sample_size <- 5
-        
-        aes_fill  <- ifelse(br < min_sample_size, "white",   "steelblue3")
+
+        aes_fill  <- ifelse(br < min_sample_size, "white", "steelblue3")
 
         p_bubble <- p_data %>%
           ggplot(aes(x = wk_date4, y = prop)) +
@@ -545,33 +590,35 @@ server <- function(input, output, session) { # add session for observeEvent rese
                      shape = 21) +
           scale_fill_manual(values = c("low" = "white", "sufficient" = "steelblue3"),
                             guide = "none") +    # suppress separate fill legend
-          facet_wrap(~ spp, ncol = 1, scales = "free_x",
-                     strip.position = strip_side,
-                     labeller = labeller(spp = label_wrap_gen(20))) +
-          scale_size_continuous(range = c(2, 7),
-                                breaks = br,
-                                guide = guide_legend(
-                                  title = "No. observations",
-                                  nrow = 1,
-                                  override.aes = list(fill = aes_fill))
-          ) +
           scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2025-12-31")),
                        expand = 0.02,
                        date_breaks = date_breaks,
                        date_labels = "%e %b") +
           scale_y_continuous(limits = c(-0.05, 1.05)) +
-          labs(x = "Date", y = yaxis_bubble()) +
-          theme(legend.position = "top",
-                axis.text = element_text(size = text_size),
-                axis.title = element_text(size = text_size),
-                legend.text = element_text(size = text_size),
-                legend.title = element_text(size = text_size),
-                strip.text = element_text(size = text_size + 1),
-                panel.grid.minor = element_blank(),
-                strip.background = element_rect(fill = "#b6d3b6"))
+          labs(y = yaxis_bubble())
         
         if (strip_side == "top") {
         
+          p_bubble <- p_bubble +
+            scale_size_continuous(range = c(2, 7),
+                                  breaks = br,
+                                  guide = guide_legend(
+                                    title = "No. observations",
+                                    nrow = 1,
+                                    override.aes = list(fill = aes_fill))
+            ) +
+            facet_wrap(~ spp, ncol = 1, scales = "free_x",
+                       strip.position = strip_side) +
+            theme(legend.position = "top",
+                  axis.text = element_text(size = text_size),
+                  axis.title.x = element_blank(),
+                  axis.title.y = element_text(size = text_size),
+                  legend.text = element_text(size = text_size),
+                  legend.title = element_text(size = text_size),
+                  strip.text = element_text(size = text_size + 1),
+                  panel.grid.minor = element_blank(),
+                  strip.background = element_rect(fill = "#b6d3b6"))
+          
           # Pull the legend out of the plot as its own grob so it can be placed
           # next to the title instead of stacked above the plot
           legend_grob <- cowplot::get_legend(p_bubble)
@@ -579,8 +626,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
           title_text <- str_wrap(
             paste0("Size of bubble varies with number of observations. ",
                    "White-filled bubbles indicate that the proportion is based on ",
-                   "fewer than the minimum desired number of observations (",
-                   min_sample_size, ")."),
+                   "very few samples (<", min_sample_size, ")."),
             width = 80
           )
           title_grob <- grid::textGrob(
@@ -607,19 +653,39 @@ server <- function(input, output, session) { # add session for observeEvent rese
       
         } else {
           p_bubble +
+            scale_size_continuous(range = c(1, 4),
+                                  breaks = br,
+                                  guide = guide_legend(
+                                    title = "No. observations",
+                                    nrow = 1,
+                                    override.aes = list(fill = aes_fill))
+            ) +
+            facet_wrap(~ spp, ncol = 1, scales = "free_x",
+                       strip.position = strip_side,
+                       labeller = labeller(spp = label_wrap_gen(wrap_length))) +
             labs(caption = str_wrap(
               paste0("Size of bubble varies with number of observations. ",
                      "White-filled bubbles indicate that the proportion is based on ",
-                     "fewer than the minimum desired number of observations (",
-                     min_sample_size, ")."),
+                     "very few samples (<", min_sample_size, ")."),
               width = 90)) +
-            theme(plot.caption = element_text(hjust = 0,
-                                              size = text_size))
+            theme(legend.position = "top",
+                  axis.text = element_text(size = text_size),
+                  axis.title.x = element_blank(),
+                  axis.title.y = element_text(size = text_size + 1),
+                  legend.text = element_text(size = text_size),
+                  legend.title = element_text(size = text_size + 1),
+                  strip.text = element_text(size = ifelse(nspp < 8, 
+                                                          text_size + 1,
+                                                          text_size - 1)),
+                  panel.grid.minor = element_blank(),
+                  strip.background = element_rect(fill = "#b6d3b6"),
+                  plot.caption = element_text(hjust = 0, size = text_size + 1))
         }  
           
       } else {
-
-        min_sample_size <- 5
+        
+        barwidth <- if_else(input$period == "weekly" & strip_side != "top",
+                            heatmap_width() - 1, heatmap_width())
         
         # Add a dummy column so we can inject an NA key into the legend
         p_data$na_label <- factor(ifelse(is.na(p_data$prop), 
@@ -629,7 +695,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
         p_heat <- p_data %>%
           ggplot() +
           geom_bar(aes(x = wk_date4, y = 0.9, fill = prop), stat = "identity",
-                   width = heatmap_width()) +
+                   width = barwidth) +
           # Invisible geom that exists only to create the legend key
           geom_tile(aes(x = wk_date4, y = -99, color = na_label),
                     fill = "white", linewidth = 0.5, width = heatmap_width(), 
@@ -653,11 +719,6 @@ server <- function(input, output, session) { # add session for observeEvent rese
               )
             )
           ) +
-          geom_text(data = filter(p_data, obs_group == "low"),
-                    aes(x = wk_date4, y = 0.95, label = nobs), 
-                    color = "red", fontface = 2, size = heatmap_text1) +
-          geom_text(data = filter(p_data, obs_group == "sufficient"),
-                    aes(x = wk_date4, y = 0.95, label = nobs), size = heatmap_text2) +
           scale_y_continuous(expand = c(0, 0)) +
           coord_cartesian(ylim = c(0, 1)) +
           scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2026-01-01")),
@@ -666,25 +727,32 @@ server <- function(input, output, session) { # add session for observeEvent rese
                        date_labels = "%e %b") +
           facet_wrap(~ spp, ncol = 1, scales = "free_x",
                      strip.position = strip_side,
-                     labeller = labeller(spp = label_wrap_gen(20))) +
-          labs(x = "Date") +
-          theme(legend.position = "top",
-                legend.key.width = unit(1.5, "cm"),
-                axis.text.x = element_text(size = text_size),
-                axis.text.y = element_blank(),
-                axis.title.x = element_text(size = text_size),
-                axis.title.y = element_blank(),
-                axis.ticks.y = element_blank(),
-                panel.background = element_rect(fill = "white"),
-                panel.grid.major = element_blank(),
-                panel.grid.minor = element_blank(),
-                legend.text = element_text(size = text_size),
-                legend.title = element_text(size = text_size),
-                strip.text = element_text(size = text_size + 1),
-                strip.background = element_rect(fill = "#b6d3b6"))
+                     labeller = labeller(spp = label_wrap_gen(20)))
         
         if (strip_side == "top") {
         
+          p_heat <- p_heat +
+            geom_text(data = filter(p_data, obs_group == "low"),
+                      aes(x = wk_date4, y = 0.95, label = nobs), 
+                      color = "red", fontface = 2, size = heatmap_text1) +
+            geom_text(data = filter(p_data, obs_group == "sufficient"),
+                      aes(x = wk_date4, y = 0.95, label = nobs), size = heatmap_text2) +
+            facet_wrap(~ spp, ncol = 1, scales = "free_x",
+                       strip.position = strip_side) +
+            theme(legend.position = "top",
+                  legend.key.width = unit(1.5, "cm"),
+                  axis.text.x = element_text(size = text_size),
+                  axis.text.y = element_blank(),
+                  axis.title = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  panel.background = element_rect(fill = "white"),
+                  panel.grid.major = element_blank(),
+                  panel.grid.minor = element_blank(),
+                  legend.text = element_text(size = text_size),
+                  legend.title = element_text(size = text_size),
+                  strip.text = element_text(size = text_size + 1),
+                  strip.background = element_rect(fill = "#b6d3b6"))
+          
           # Pull the legend out of the plot as its own grob so it can be placed
           # next to the title instead of stacked above the plot
           legend_grob <- cowplot::get_legend(p_heat)
@@ -692,8 +760,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
           title_text <- str_wrap(
             paste0("Number of observations each proportion is based on is ",
                    "listed above the colored bar. Bolded red values indicate ",
-                   "that there are fewer than the minimum desired number of ",
-                   "samples (", min_sample_size, ")."),
+                   "that there are very few samples (<", min_sample_size, ")."),
             width = 80
           )
           title_grob <- grid::textGrob(
@@ -721,16 +788,35 @@ server <- function(input, output, session) { # add session for observeEvent rese
         } else {
           
           p_heat +
+            geom_point(data = filter(p_data, obs_group == "low"),
+                       aes(x = wk_date4, y = 0.95), color = "red", size = 2) + 
+            geom_point(data = filter(p_data, obs_group == "sufficient"),
+                       aes(x = wk_date4, y = 0.95), color = "gray30") +
+            facet_wrap(~ spp, ncol = 1, scales = "free_x",
+                       strip.position = strip_side,
+                       labeller = labeller(spp = label_wrap_gen(wrap_length))) +
             labs(caption = str_wrap(
               paste0("Number of observations each proportion is based on is ",
                      "listed above the colored bar. Bolded red values indicate ",
-                     "that there are fewer than the minimum desired number of ",
-                     "samples (", min_sample_size, ")."),
+                     "that there are very few samples (<", min_sample_size, ")."),
               width = 90)) +
-            theme(plot.caption = element_text(hjust = 0,
-                                              size = text_size))
+            theme(legend.position = "top",
+                  legend.key.width = unit(1.5, "cm"),
+                  axis.text.x = element_text(size = text_size),
+                  axis.text.y = element_blank(),
+                  axis.title = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  panel.background = element_rect(fill = "white"),
+                  panel.grid.major = element_blank(),
+                  panel.grid.minor = element_blank(),
+                  legend.text = element_text(size = text_size),
+                  legend.title = element_text(size = text_size + 1),
+                  strip.text = element_text(size = ifelse(nspp < 8, 
+                                                          text_size + 1,
+                                                          text_size - 1)),
+                  strip.background = element_rect(fill = "#b6d3b6"),
+                  plot.caption = element_text(hjust = 0, size = text_size + 1))
         }  
-        
       }
   }
 
@@ -759,7 +845,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
     content = function(file) {
       ggsave(file, 
              plot = build_plot(strip_side = "right", 
-                               text_size = 11,
+                               text_size = 8,
                                heatmap_text1 = 4,
                                heatmap_text2 = 3.2, 
                                date_breaks = "2 months"), 
