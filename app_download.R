@@ -75,23 +75,27 @@ ui <- page_navbar(
     div(style = "font-size:90%",
         navset_tab(
           nav_panel(
-            title = "Info",
+            title = "Background",
             br(),
             HTML("This app uses data submitted since January 2025 to <i>USA-NPN 
                  Nature's Notebook</i> for species identified as priorities as 
-                 part of the <i>Time to Restore</i> project. Under the 
-                 <i><b>Data summaries</i></b> tab, plots display the weekly or
-                 biweekly proportion of plants with flowers or open flowers 
-                 within the selected area (4-state region, state, or for Texas
-                 only, metropolitan area). Under the <i><b>Map</i></b> tab, a 
-                 map displays the locations of all oberved plants for the 
-                 selected species and region. Users can click on a point to get  
-                 information about the site and number of plants observed."),
+                 part of the <i>Time to Restore</i> project. After a user
+                 selects options in the <i><b>Settings</i></b> tab, they can
+                 view plots displaying the weekly or biweekly proportion of 
+                 plants with flowers or open flowers within a selected area on 
+                 the <i><b>Data summaries</i></b> page. The user can also view a
+                 map with locations of all oberved plants for the selected 
+                 species and region on the <i><b>Map</i></b> page. Clicking on a 
+                 point on the map will display information about the site and 
+                 number of plants observed."),
+            br(),
+            br(),
+            HTML("<b>SETTINGS</b>"),
             br(),
             br(),
             HTML("<b>Species</b>: Users can select one or more species to  
-                 display, in the order of their choice. Available species for 
-                 the selected region include only those with observations from 
+                 display, in the order of their choice. Users can choose from 
+                 species in the selected region that have observations from 
                  10 or more plants, each with 5 or more observations per 
                  year."),
             br(), 
@@ -105,13 +109,8 @@ ui <- page_navbar(
                  <i><b>bubble plot</b></i> is most effective for visualizing
                  flowering 'peaks'. A <i><b>heat map</b></i> can be effective 
                  for comparing phenology among species, but users should use  
-                 with caution given that it is difficult to identify when 
-                 proportions are based on few observations."),
-            br(),
-            br(),
-            HTML("<b>Funding</b>: The <i>Time to Restore</i> project is 
-                 supported by the South Central Climate Adapatation Science  
-                 Center, which is managed by the U.S. Geological Survey.")
+                 with caution given that it is more difficult to identify when
+                 proportions are based on few observations.")
           ),
           nav_panel(
             title = "Settings",
@@ -142,7 +141,26 @@ ui <- page_navbar(
                                      "Bubble plot",
                                      "Heat map")),
             downloadButton(outputId = "download_pdf",
-                           label = "Download PDF (letter size)")
+                           label = "Download PDF")
+          ),
+          nav_panel(
+            title = "Funding",
+            br(),
+            HTML("The <i>Time to Restore</i> project is supported by the South
+                 Central Climate Adapatation Science Center, the USA National
+                 Phenology Network, and the University of Arizona."),
+            br(),
+            br(),
+            div(
+              style = "text-align: center;",
+              img(src = "SCCASClogo.png", height = "70%", width = "70%")
+            ),
+            br(),
+            div(
+              style = "display: inline-flex; justify-content: space-evenly; align-items: center;",
+              img(src = "NPNlogo.png", height = "50%", width = "50%"),
+              img(src = "UAlogo.png", height = "25%", width = "25%")
+            )
           )
         )
     )
