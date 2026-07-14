@@ -12,9 +12,6 @@ library(sortable)
 library(grid)
 library(cowplot)
 
-# TODO: decrease max size of points in bubble plots in PDF
-# TODO: Replace sample sizes in heat map in PDF with red dots/Xs when < minimum
-
 # Load/format observation data ------------------------------------------------#
 
 df <- read.csv("data/status-intensity-flowers-May2026.csv")
@@ -281,7 +278,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
         orientation = "vertical",
         add_rank_list(
           text = "Available",
-          labels = unique(speciessubset()$spp),
+          labels = sort(unique(speciessubset()$spp)),
           input_id = "species_available"
         ),
         add_rank_list(
