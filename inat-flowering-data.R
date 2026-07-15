@@ -13,6 +13,7 @@ library(ggplot2)
 # library(cowplot)
 library(terra)
 library(tidyterra)
+library(rnpn)
 
 # Load/format observation data ------------------------------------------------#
 
@@ -72,7 +73,7 @@ min_sample_size <- 5
 # iNat observations with flower annotation (don't have separate open flower
 # annotation)
 
-phenofolder <- "C:/Users/erin/Desktop/phenobase"
+phenofolder <- "data/iNat/phenobase"
 phenozips <- list.files(phenofolder, full.names = TRUE)
 
 for (i in seq_along(phenozips)) {
@@ -88,12 +89,9 @@ rm(pheno1)
 
 # Simplify data
 inat <- inatfull %>%
-  select(scientificName, year, latitude, longitude, eventDate,
-         coordinateUncertaintyInMeters) %>%
   mutate(date = ymd(eventDate)) %>%
-  rename(coordU = coordinateUncertaintyInMeters,
-         spp = scientificName) %>%
-  select(-eventDate)
+  rename(coordU = coordinateUncertaintyInMeters) %>%
+  select(scientificName, year, latitude, longitude, date, coordU)
 
 # Look at what points have tons of geographic uncertainty
 # inat %>%
@@ -110,11 +108,66 @@ inat <- inat %>%
   filter(!is.na(coordU) & coordU <= 10000) %>%
   select(-coordU)
 
-# Load states shapefile (data/states)
-# Assign states
-# Filter to 4-state region
-# Label wk, wk2, and month
+# Simplify species names (iNat/phenobase provides subspecies for some)
+inat <- inat %>%
+  separate_wider_delim(scientificName, 
+                       delim = " ", 
+                       names = c("genus", "species", "subspecies"),
+                       too_few = "align_start")
 
+# Get NPN species_ids and common names
+npn_spp <- npn_species() %>%
+  select(species_id, common_name, genus, species)
+inat <- inat %>%
+  left_join(npn_spp, by = c("genus", "species")) %>%
+  data.frame()
 
+# Assign states for each plant location
+states <- vect("data/states/cb_2017_us_state_500k.shp")
+states <- project(states, "epsg:4326")
+states <- select(states, STUSPS)
+inatlocs <- inat %>%
+  select(longitude, latitude) %>%
+  vect(crs = "epsg:4326")
+statefill <- terra::extract(states, inatlocs)
+inat$state <- statefill$STUSPS
 
+# Extract observations for 4-state area
+inat4 <- inat %>%
+  filter(state %in% c("NM", "OK", "TX", "LA"))
 
+# Create month, week, bi-weekly assignments
+inat4 <- inat4 %>%
+  mutate(month = month(date),
+         wk = week(date)) %>%
+  mutate(wk2 = ifelse(wk%%2 == 0, wk - 1, wk))
+
+inat_month <- inat4 %>%
+  group_by(common_name, month) %>%
+  summarize(nobs = n(), .groups = "drop") %>%
+  group_by(common_name) %>%
+  mutate(nmonths = n_distinct(month),
+         totalobs = sum(nobs)) %>%
+  ungroup() %>%
+  filter(totalobs > 100) %>%
+  data.frame()
+
+# ggplot(inat_month, aes(x = month, y = nobs)) +
+#   geom_smooth(method = "loess", span = 0.35, se = FALSE) +
+#   geom_point() +
+#   scale_x_continuous(breaks = seq(1, 11, by = 2)) +
+#   scale_y_log10() +
+#   facet_wrap(~common_name, scales = "free_y")
+
+smoothed_month <- inat_month %>%
+  group_by(common_name) %>%
+  group_modify(function(.x, .y) {
+    fit <- loess(log(nobs) ~ month, data = .x, span = 0.35)
+    tibble(month = seq(min(.x$month), max(.x$month), length.out = 100)) %>%
+      mutate(nobs = exp(predict(fit, newdata = .)))
+  })
+
+ggplot(inat_month, aes(x = month, y = nobs)) +
+  geom_point() +
+  geom_line(data = smoothed_month, color = "steelblue") +
+  facet_wrap(~common_name, scales = "free_y")

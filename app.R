@@ -237,7 +237,6 @@ server <- function(input, output, session) { # add session for observeEvent rese
   # Render a drag-and-drop rank_list instead of a plain selectInput.
   # Users drag items from the "Available" bucket into "Selected & ordered" to
   # both choose species and set their facet order in one widget.
-  # TODO: figure out how to left justify this section ####
   output$speciesChoices <- renderUI({
     tagList(
       tags$style(HTML("
