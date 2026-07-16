@@ -77,13 +77,13 @@ ui <- page_navbar(
           nav_panel(
             title = "Background",
             br(),
-            HTML("This app uses data submitted since January 2025 to <i>USA-NPN 
-                 Nature's Notebook</i> for species identified as priorities as 
-                 part of the <i>Time to Restore</i> project. After a user
-                 selects options in the <i><b>Settings</i></b> tab, they can
-                 view plots displaying the weekly or biweekly proportion of 
-                 plants with flowers or open flowers within a selected area on 
-                 the <i><b>Data summaries</i></b> page. The user can also view a
+            HTML("This app uses data submitted to <i>Nature's Notebook</i> since 
+                 January 2025 for species identified as priorities on the 
+                 <i>Time to Restore</i> project. After a user selects options in
+                 the <i><b>Settings</i></b> tab, they can view plots displaying
+                 the weekly or biweekly proportion of plants with flowers or
+                 open flowers within a selected region on the
+                 <i><b>Data summaries</i></b> page. The user can also view a
                  map with locations of all oberved plants for the selected 
                  species and region on the <i><b>Map</i></b> page. Clicking on a 
                  point on the map will display the site ID number and the number 
@@ -109,10 +109,11 @@ ui <- page_navbar(
                  " observations). A <i><b>bar chart</b></i> is the easiest way
                  to visualize variation in effort over time. A
                  <i><b>bubble plot</b></i> is most effective for visualizing
-                 flowering 'peaks'. A <i><b>heat map</b></i> can be effective 
-                 for comparing phenology among species, but users should use  
-                 with caution given that it is more difficult to identify when
-                 proportions are based on few observations.")
+                 flowering 'peaks' in one or more species. A 
+                 <i><b>heat map</b></i> can be effective for comparing phenology
+                 among species, but should be used with caution given that it is 
+                 more difficult to identify when proportions are based on few
+                 observations.")
           ),
           nav_panel(
             title = "Settings",
@@ -150,8 +151,8 @@ ui <- page_navbar(
             title = "Funding",
             br(),
             HTML("The <i>Time to Restore</i> project is supported by the South
-                 Central Climate Adapatation Science Center, the USA National
-                 Phenology Network, and the University of Arizona."),
+                 Central Climate Adapatation Science Center and the USA National
+                 Phenology Network."),
             br(),
             br(),
             div(
@@ -160,10 +161,14 @@ ui <- page_navbar(
             ),
             br(),
             div(
-              style = "display: inline-flex; justify-content: space-evenly; align-items: center;",
-              img(src = "NPNlogo.png", height = "50%", width = "50%"),
-              img(src = "UAlogo.png", height = "25%", width = "25%")
+              style = "text-align: center;",
+              img(src = "NPNlogo.png", height = "50%", width = "50%")
             )
+            # div(
+            #   style = "display: inline-flex; justify-content: space-evenly; align-items: center;",
+            #   img(src = "NPNlogo.png", height = "50%", width = "50%"),
+            #   img(src = "UAlogo.png", height = "25%", width = "25%")
+            # )
           )
         )
     )
@@ -480,19 +485,11 @@ server <- function(input, output, session) { # add session for observeEvent rese
           scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2025-12-31")),
                        expand = 0.02,
                        date_breaks = date_breaks,
-                       date_labels = "%e %b") +
+                       date_labels = "%e %b",
+                       date_minor_breaks = "1 month") +
           labs(y = "No. observations", 
                fill = fill_bar(), color = fill_bar()) +
-          theme_bw() +
-          theme(legend.position = "top",
-                axis.text = element_text(size = text_size),
-                axis.title.x = element_blank(),
-                axis.title.y = element_text(size = text_size),
-                legend.text = element_text(size = text_size),
-                legend.title = element_text(size = text_size),
-                strip.text = element_text(size = text_size + 1),
-                panel.grid.minor = element_blank(),
-                strip.background = element_rect(fill = "#b6d3b6"))
+          theme_bw()
         
         if (strip_side == "top") {
         
@@ -565,7 +562,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
                   strip.text = element_text(size = ifelse(nspp < 8, 
                                                           text_size + 1,
                                                           text_size - 1)),
-                  panel.grid.minor = element_blank(),
+                  panel.grid.minor.y = element_blank(),
                   strip.background = element_rect(fill = "#b6d3b6"),
                   plot.caption = element_text(hjust = 0, size = text_size + 1))
         }  
@@ -674,7 +671,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
                   strip.text = element_text(size = ifelse(nspp < 8, 
                                                           text_size + 1,
                                                           text_size - 1)),
-                  panel.grid.minor = element_blank(),
+                  panel.grid.minor.y = element_blank(),
                   strip.background = element_rect(fill = "#b6d3b6"),
                   plot.caption = element_text(hjust = 0, size = text_size + 1))
         }  
@@ -720,7 +717,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
           coord_cartesian(ylim = c(0, 1)) +
           scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2026-01-01")),
                        expand = 0.02,
-                       date_breaks = date_breaks,
+                       date_breaks = "1 month",
                        date_labels = "%e %b") +
           facet_wrap(~ spp, ncol = 1, scales = "free_x",
                      strip.position = strip_side,
@@ -793,10 +790,15 @@ server <- function(input, output, session) { # add session for observeEvent rese
                        strip.position = strip_side,
                        labeller = labeller(spp = label_wrap_gen(wrap_length))) +
             labs(caption = str_wrap(
-              paste0("Number of observations each proportion is based on is ",
-                     "listed above the colored bar. Bolded red values indicate ",
-                     "that there are very few samples (<", min_sample_size, ")."),
-              width = 90)) +
+              paste0("Brighter blue bars indicate that a higher proportion of ",
+                     "observed plants had ",
+                     if (input$php == "open") {"open "} else {},
+                     "flowers. Dots above the vertical bars indicate whether ",
+                     "proportions were based on a sufficient number of plants ",
+                     "(at least ", min_sample_size, "; gray dot) or very few ",
+                     "plants (<", 
+                     min_sample_size, "; red dot)."),
+              width = 127)) +
             theme(legend.position = "top",
                   legend.key.width = unit(1.5, "cm"),
                   axis.text.x = element_text(size = text_size),
@@ -805,7 +807,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
                   axis.ticks.y = element_blank(),
                   panel.background = element_rect(fill = "white"),
                   panel.grid.major = element_blank(),
-                  panel.grid.minor = element_blank(),
+                  panel.grid.minor.y = element_blank(),
                   legend.text = element_text(size = text_size),
                   legend.title = element_text(size = text_size + 1),
                   strip.text = element_text(size = ifelse(nspp < 8, 
