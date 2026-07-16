@@ -171,3 +171,51 @@ ggplot(inat_month, aes(x = month, y = nobs)) +
   geom_point() +
   geom_line(data = smoothed_month, color = "steelblue") +
   facet_wrap(~common_name, scales = "free_y")
+
+# Biweekly
+inat_biweek <- inat4 %>%
+  group_by(common_name, wk2) %>%
+  summarize(nobs = n(), .groups = "drop") %>%
+  group_by(common_name) %>%
+  mutate(nperiods = n_distinct(wk2),
+         totalobs = sum(nobs)) %>%
+  ungroup() %>%
+  filter(totalobs > 100) %>%
+  data.frame()
+
+smoothed_biweek <- inat_biweek %>%
+  group_by(common_name) %>%
+  group_modify(function(.x, .y) {
+    fit <- loess(log(nobs) ~ wk2, data = .x, span = 0.25)
+    tibble(wk2 = seq(min(.x$wk2), max(.x$wk2), length.out = 100)) %>%
+      mutate(nobs = exp(predict(fit, newdata = .)))
+  })
+
+ggplot(inat_biweek, aes(x = wk2, y = nobs)) +
+  geom_point() +
+  geom_line(data = smoothed_biweek, color = "steelblue") +
+  facet_wrap(~common_name, scales = "free_y")
+
+# Weekly (seems like there's too much noise at weekly timescale)
+# inat_week <- inat4 %>%
+#   group_by(common_name, wk) %>%
+#   summarize(nobs = n(), .groups = "drop") %>%
+#   group_by(common_name) %>%
+#   mutate(nweeks = n_distinct(wk),
+#          totalobs = sum(nobs)) %>%
+#   ungroup() %>%
+#   filter(totalobs > 100) %>%
+#   data.frame()
+# 
+# smoothed_week <- inat_week %>%
+#   group_by(common_name) %>%
+#   group_modify(function(.x, .y) {
+#     fit <- loess(log(nobs) ~ wk, data = .x, span = 0.35)
+#     tibble(wk = seq(min(.x$wk), max(.x$wk), length.out = 100)) %>%
+#       mutate(nobs = exp(predict(fit, newdata = .)))
+#   })
+# 
+# ggplot(inat_week, aes(x = wk, y = nobs)) +
+#   geom_point() +
+#   geom_line(data = smoothed_week, color = "steelblue") +
+#   facet_wrap(~common_name, scales = "free_y")
