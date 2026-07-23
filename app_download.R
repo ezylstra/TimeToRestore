@@ -512,7 +512,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
         total_height <- max(300, 250 * length(input$species_order))
         title_frac <- 60 / total_height
       } else {
-        title_frac <- 0.12
+        title_frac <- 0.07 # 0.12
       }
 
       if (input$vistype == "Bar chart") {
@@ -584,7 +584,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
         
         } else {
           
-          p_bar +
+          p_bar <- p_bar +
             geom_hline(yintercept = min_sample_size, 
                        linetype = "dotted", color = "salmon3", linewidth = 0.7) +
             facet_wrap(~ spp, ncol = 1, scales = "free_x",
@@ -607,8 +607,33 @@ server <- function(input, output, session) { # add session for observeEvent rese
                   panel.grid.minor.y = element_blank(),
                   strip.background = element_rect(fill = "#b6d3b6"),
                   plot.caption = element_text(hjust = 0, size = text_size + 1))
-        }  
-
+          
+          # Pull the legend out as its own grob, same trick used elsewhere
+          legend_grob <- cowplot::get_legend(p_bar)
+          
+          # Logo, anchored to the left edge of its cell
+          npn_logo <- cowplot::ggdraw() +
+            cowplot::draw_image("www/NPNlogo.png", 
+                                x = 0, hjust = 0, width = 0.9)
+          sccasc_logo <- cowplot::ggdraw() +
+            cowplot::draw_image("www/SCCASClogo.png", 
+                                x = 0, hjust = 0, width = 0.9)
+          
+          # Legend, anchored to the right edge of its cell
+          legend_panel <- cowplot::ggdraw() +
+            cowplot::draw_grob(legend_grob, x = 0.98, hjust = 1)
+          
+          # Logos on the left, legend on the right, in one row
+          top_row <- cowplot::plot_grid(NULL, npn_logo, sccasc_logo, legend_panel,
+                                        nrow = 1, rel_widths = c(0.2, 1, 1, 5))
+          
+          # That row stacked above the plot (with its own legend removed)
+          cowplot::plot_grid(top_row,
+                             p_bar + theme(legend.position = "none"),
+                             ncol = 1, 
+                             rel_heights = c(title_frac, 1 - title_frac))
+        }
+        
       } else if (input$vistype == "Bubble plot") {
 
         # Compute breaks the same way ggplot will: apply pretty_breaks to the
@@ -688,14 +713,13 @@ server <- function(input, output, session) { # add session for observeEvent rese
                              rel_heights = c(title_frac, 1 - title_frac))
       
         } else {
-          p_bubble +
+          p_bubble <- p_bubble +
             scale_size_continuous(range = c(1, 4),
                                   breaks = br,
                                   guide = guide_legend(
                                     title = "No. observations",
                                     nrow = 1,
-                                    override.aes = list(fill = aes_fill))
-            ) +
+                                    override.aes = list(fill = aes_fill))) +
             facet_wrap(~ spp, ncol = 1, scales = "free_x",
                        strip.position = strip_side,
                        labeller = labeller(spp = label_wrap_gen(wrap_length))) +
@@ -716,8 +740,34 @@ server <- function(input, output, session) { # add session for observeEvent rese
                   panel.grid.minor.y = element_blank(),
                   strip.background = element_rect(fill = "#b6d3b6"),
                   plot.caption = element_text(hjust = 0, size = text_size + 1))
-        }  
           
+          
+          # Pull the legend out as its own grob, same trick used elsewhere
+          legend_grob <- cowplot::get_legend(p_bubble)
+          
+          # Logo, anchored to the left edge of its cell
+          npn_logo <- cowplot::ggdraw() +
+            cowplot::draw_image("www/NPNlogo.png", 
+                                x = 0, hjust = 0, width = 0.9)
+          sccasc_logo <- cowplot::ggdraw() +
+            cowplot::draw_image("www/SCCASClogo.png", 
+                                x = 0, hjust = 0, width = 0.9)
+          
+          # Legend, anchored to the right edge of its cell
+          legend_panel <- cowplot::ggdraw() +
+            cowplot::draw_grob(legend_grob, x = 0.98, hjust = 1)
+          
+          # Logos on the left, legend on the right, in one row
+          top_row <- cowplot::plot_grid(NULL, npn_logo, sccasc_logo, legend_panel,
+                                        nrow = 1, rel_widths = c(0.2, 1, 1, 5))
+          
+          # That row stacked above the plot (with its own legend removed)
+          cowplot::plot_grid(top_row,
+                             p_bubble + theme(legend.position = "none"),
+                             ncol = 1, 
+                             rel_heights = c(title_frac, 1 - title_frac))
+        }
+
       } else { # heat map
         
         barwidth <- if_else(input$period == "weekly" & strip_side != "top",
@@ -824,7 +874,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
           
         } else {
           
-          p_heat +
+          p_heat <- p_heat +
             geom_point(data = filter(p_data, obs_group == "low"),
                        aes(x = wk_date4, y = 0.95), color = "red", size = 2) + 
             geom_point(data = filter(p_data, obs_group == "sufficient"),
@@ -843,7 +893,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
                      min_sample_size, "; red dot)."),
               width = 127)) +
             theme(legend.position = "top",
-                  legend.key.width = unit(1.5, "cm"),
+                  legend.key.width = unit(0.8, "cm"),
                   axis.text.x = element_text(size = text_size),
                   axis.text.y = element_blank(),
                   axis.title = element_blank(),
@@ -858,6 +908,31 @@ server <- function(input, output, session) { # add session for observeEvent rese
                                                           text_size - 1)),
                   strip.background = element_rect(fill = "#b6d3b6"),
                   plot.caption = element_text(hjust = 0, size = text_size + 1))
+          
+          # Pull the legend out as its own grob, same trick used elsewhere
+          legend_grob <- cowplot::get_legend(p_heat)
+          
+          # Logo, anchored to the left edge of its cell
+          npn_logo <- cowplot::ggdraw() +
+            cowplot::draw_image("www/NPNlogo.png", 
+                                x = 0, hjust = 0, width = 0.9)
+          sccasc_logo <- cowplot::ggdraw() +
+            cowplot::draw_image("www/SCCASClogo.png", 
+                                x = 0, hjust = 0, width = 0.9)
+          
+          # Legend, anchored to the right edge of its cell
+          legend_panel <- cowplot::ggdraw() +
+            cowplot::draw_grob(legend_grob, x = 0.98, hjust = 1)
+          
+          # Logos on the left, legend on the right, in one row
+          top_row <- cowplot::plot_grid(NULL, npn_logo, sccasc_logo, legend_panel,
+                                        nrow = 1, rel_widths = c(0.2, 1, 1, 5))
+          
+          # That row stacked above the plot (with its own legend removed)
+          cowplot::plot_grid(top_row,
+                             p_heat + theme(legend.position = "none"),
+                             ncol = 1, 
+                             rel_heights = c(title_frac, 1 - title_frac))
         }  
       }
   }
