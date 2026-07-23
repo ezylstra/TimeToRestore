@@ -63,7 +63,7 @@ loc_options <- distinct(dfw, state, region) %>%
   rbind(data.frame(state = "SC states (4)", 
                    region = "Entire SC region"))
 
-# Desired minimum sample size for calculating proportions
+# Desired minimum sample size for calculating proportions/percents
 min_sample_size <- 5
 
 # ui --------------------------------------------------------------------------#
@@ -92,7 +92,7 @@ ui <- page_navbar(
                  January 2025 for species identified as priorities on the 
                  <i>Time to Restore</i> project. After a user selects options in
                  the <i><b>Settings</i></b> tab, they can view plots displaying
-                 the weekly or biweekly proportion of plants with flowers or
+                 the weekly or biweekly percent of plants with flowers or
                  open flowers within a selected region on the
                  <i><b>Data summaries</i></b> page. The user can also view a
                  map with locations of all oberved plants for the selected 
@@ -112,9 +112,9 @@ ui <- page_navbar(
             br(), 
             br(),
             HTML("<b>Visualizations</b>: Users can select one of three options  
-                 for displaying weekly/biweekly proportions of plants with  
+                 for displaying weekly/biweekly percent of plants with  
                  flowers or open flowers. Each visualization type provides 
-                 indications when sample sizes are problematic (e.g., proportion 
+                 indications when sample sizes are problematic (e.g., percent 
                  based on <",
                  min_sample_size, 
                  " observations). A <i><b>bar chart</b></i> is the easiest way
@@ -123,7 +123,7 @@ ui <- page_navbar(
                  flowering 'peaks' in one or more species. A 
                  <i><b>heat map</b></i> can be effective for comparing phenology
                  among species, but should be used with caution given that it is 
-                 more difficult to identify when proportions are based on few
+                 more difficult to identify when values are based on few
                  observations.")
           ),
           nav_panel(
@@ -452,15 +452,16 @@ server <- function(input, output, session) { # add session for observeEvent rese
                 prop = nyes/nobs,
                 .groups = "drop") %>%
       data.frame() %>% 
-      mutate(obs_group = ifelse(nobs < min_sample_size, "low", "sufficient"))
+      mutate(percent = prop * 100,
+             obs_group = ifelse(nobs < min_sample_size, "low", "sufficient"))
   })
 
   # Plot aesthetics
   yaxis_bubble <- reactive({
     if (input$php == "flower") {
-      "Proportion with flowers"
+      "Percent with flowers"
     } else {
-      "Proportion with open flowers"
+      "Percent with open flowers"
     }
   })
   fill_bar <- reactive({
@@ -619,7 +620,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
         aes_fill  <- ifelse(br < min_sample_size, "white", maxcolor)
 
         p_bubble <- p_data %>%
-          ggplot(aes(x = wk_date4, y = prop)) +
+          ggplot(aes(x = wk_date4, y = percent)) +
           geom_line(color = "gray50") +
           geom_point(aes(size = nobs, fill = obs_group), color = maxcolor,
                      shape = 21) +
@@ -629,7 +630,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
                        expand = 0.02,
                        date_breaks = date_breaks,
                        date_labels = "%e %b") +
-          scale_y_continuous(limits = c(-0.05, 1.05)) +
+          scale_y_continuous(limits = c(-5, 105)) +
           labs(y = yaxis_bubble())
         
         if (strip_side == "top") {
@@ -660,8 +661,8 @@ server <- function(input, output, session) { # add session for observeEvent rese
           
           title_text <- str_wrap(
             paste0("Size of bubble varies with number of observations. ",
-                   "White-filled bubbles indicate that the proportion is based on ",
-                   "very few samples (<", min_sample_size, ")."),
+                   "White-filled bubbles indicate that the percent is based ",
+                   "on very few samples (<", min_sample_size, ")."),
             width = 80
           )
           title_grob <- grid::textGrob(
@@ -700,8 +701,8 @@ server <- function(input, output, session) { # add session for observeEvent rese
                        labeller = labeller(spp = label_wrap_gen(wrap_length))) +
             labs(caption = str_wrap(
               paste0("Size of bubble varies with number of observations. ",
-                     "White-filled bubbles indicate that the proportion is based on ",
-                     "very few samples (<", min_sample_size, ")."),
+                     "White-filled bubbles indicate that the percent is based ",
+                     "on very few samples (<", min_sample_size, ")."),
               width = 90)) +
             theme(legend.position = "top",
                   axis.text = element_text(size = text_size),
@@ -717,7 +718,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
                   plot.caption = element_text(hjust = 0, size = text_size + 1))
         }  
           
-      } else {
+      } else { # heat map
         
         barwidth <- if_else(input$period == "weekly" & strip_side != "top",
                             heatmap_width() - 1, heatmap_width())
@@ -729,7 +730,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
         
         p_heat <- p_data %>%
           ggplot() +
-          geom_bar(aes(x = wk_date4, y = 0.9, fill = prop), stat = "identity",
+          geom_bar(aes(x = wk_date4, y = 0.9, fill = percent), stat = "identity",
                    width = barwidth, color = "black") +
           # Invisible geom that exists only to create the legend key
           geom_tile(aes(x = wk_date4, y = -99, color = na_label),
@@ -794,7 +795,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
           legend_grob <- cowplot::get_legend(p_heat)
           
           title_text <- str_wrap(
-            paste0("Number of observations each proportion is based on is ",
+            paste0("Number of observations each percent is based on is ",
                    "listed above the colored bar. Bolded red values indicate ",
                    "that there are very few samples (<", min_sample_size, ")."),
             width = 80
@@ -832,11 +833,11 @@ server <- function(input, output, session) { # add session for observeEvent rese
                        strip.position = strip_side,
                        labeller = labeller(spp = label_wrap_gen(wrap_length))) +
             labs(caption = str_wrap(
-              paste0("Darker colored bars indicate that a higher proportion of ",
+              paste0("Darker colored bars indicate that a higher percent of ",
                      "observed plants had ",
                      if (input$php == "open") {"open "} else {},
                      "flowers. Dots above the vertical bars indicate whether ",
-                     "proportions were based on a sufficient number of plants ",
+                     "percents were based on a sufficient number of plants ",
                      "(at least ", min_sample_size, "; gray dot) or very few ",
                      "plants (<", 
                      min_sample_size, "; red dot)."),
