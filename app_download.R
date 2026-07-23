@@ -72,6 +72,17 @@ ui <- page_navbar(
   title = "Time to Restore",
   sidebar = sidebar(
     width = "25%",
+    # Make input labels bold
+    tags$style(HTML("
+      .control-label {
+        font-weight: bold;
+      }
+    ")),
+    tags$style(HTML("
+      .bucket-list-header {
+        font-weight: bold;
+      }
+    ")),
     div(style = "font-size:90%",
         navset_tab(
           nav_panel(
@@ -138,14 +149,45 @@ ui <- page_navbar(
                                      "Biweekly" = "biweekly"),
                          inline = TRUE),
             uiOutput("speciesChoices"),
-            radioButtons(inputId = "vistype",
-                         label = "Visualization type",
-                         choices = c("Bar chart",
-                                     "Bubble plot",
-                                     "Heat map"),
-                         selected = "Bubble plot"),
-            downloadButton(outputId = "download_pdf",
-                           label = "Download PDF")
+            div(
+              style = "display: flex;",
+              div(
+                style = "flex: 1; text-align: left;",
+                radioButtons(inputId = "vistype",
+                             label = "Visualization type",
+                             choices = c("Bar chart",
+                                         "Bubble plot",
+                                         "Heat map"),
+                             selected = "Bubble plot")
+              ),
+              div(
+                style = "flex: 1; text-align: left;",
+                radioButtons(inputId = "viscolors",
+                             label = "Color scheme",
+                             choices = c("Yellow to Red" = "YlOrRd",
+                                         "Oranges" = "Oranges",
+                                         "Yellow to Blue" = "YlGnBu"),
+                             selected = "YlGnBu")
+              )
+            ),
+            HTML("<b>Download 1-page summary</b>"),
+            div(
+              style = "display: flex;",
+              div(
+                style = "flex: 1; text-align: left;",
+                downloadButton(outputId = "download_pdf", 
+                               label = "PDF", icon = NULL)
+              ),
+              div(
+                style = "flex: 1; text-align: left;",
+                downloadButton(outputId = "download_png", 
+                               label = "PNG", icon = NULL)
+              ),
+              div(
+                style = "flex: 1; text-align: left;",
+                downloadButton(outputId = "download_jpg", 
+                               label = "JPG", icon = NULL))
+            )
           ),
           nav_panel(
             title = "Funding",
@@ -446,7 +488,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
   # Build whichever plot is currently selected (bar chart / bubble plot /
   # heat map). This is a plain function (not a reactive) so it can take a
   # strip_side argument: "top" keeps the on-screen look (species labels
-  # above each facet), while "right" is used for the PDF export to save
+  # above each facet), while "right" is used for the 1-page export to save
   # vertical space when many species are compressed onto a fixed page.
   build_plot <- function(strip_side = "top",
                          text_size = 14,
@@ -457,6 +499,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
       p_data <- props()
       nspp <- length(unique(p_data$spp))
       wrap_length <- ifelse(nspp < 8, 17, 13)
+      maxcolor <- brewer.pal(9, input$viscolors)[7]
 
       # Height fraction reserved for the title/legend row above the panels.
       # On screen ("top"), the canvas itself grows with species count, so a
@@ -474,21 +517,19 @@ server <- function(input, output, session) { # add session for observeEvent rese
       if (input$vistype == "Bar chart") {
         p_bar <- p_data %>%
           ggplot(aes(x = wk_date4, y = nobs)) +
-          geom_bar(aes(alpha = obs_group, fill = "No", color = "No"),
-                   stat = "identity", width = bar_width()) +
-          geom_bar(aes(y = nyes, alpha = obs_group, fill = "Yes", color = "Yes"),
-                   stat = "identity", width = bar_width()) +
+          geom_bar(aes(alpha = obs_group, fill = "No"),
+                   stat = "identity", width = bar_width(), color = NA) +
+          geom_bar(aes(y = nyes, alpha = obs_group, fill = "Yes"),
+                   stat = "identity", width = bar_width(), color = NA) +
           scale_alpha_manual(values = c("low" = 0.5, "sufficient" = 1),
                              guide = "none") +   # suppress separate alpha legend
-          scale_fill_manual(values = c("No" = "gray", "Yes" = "steelblue3")) +
-          scale_color_manual(values = c("No" = "gray", "Yes" = "steelblue3")) +
+          scale_fill_manual(values = c("No" = "gray", "Yes" = maxcolor)) +
           scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2025-12-31")),
                        expand = 0.02,
                        date_breaks = date_breaks,
                        date_labels = "%e %b",
                        date_minor_breaks = "1 month") +
-          labs(y = "No. observations", 
-               fill = fill_bar(), color = fill_bar()) +
+          labs(y = "No. observations", fill = fill_bar()) +
           theme_bw()
         
         if (strip_side == "top") {
@@ -575,14 +616,14 @@ server <- function(input, output, session) { # add session for observeEvent rese
         br <- pretty_breaks(p_data$nobs)
         br <- br[br >= data_range[1] & br <= data_range[2]]  # keep only in-range breaks
 
-        aes_fill  <- ifelse(br < min_sample_size, "white", "steelblue3")
+        aes_fill  <- ifelse(br < min_sample_size, "white", maxcolor)
 
         p_bubble <- p_data %>%
           ggplot(aes(x = wk_date4, y = prop)) +
           geom_line(color = "gray50") +
-          geom_point(aes(size = nobs, fill = obs_group), color = "steelblue3",
+          geom_point(aes(size = nobs, fill = obs_group), color = maxcolor,
                      shape = 21) +
-          scale_fill_manual(values = c("low" = "white", "sufficient" = "steelblue3"),
+          scale_fill_manual(values = c("low" = "white", "sufficient" = maxcolor),
                             guide = "none") +    # suppress separate fill legend
           scale_x_date(limits = c(as.Date("2025-01-01"), as.Date("2025-12-31")),
                        expand = 0.02,
@@ -689,15 +730,16 @@ server <- function(input, output, session) { # add session for observeEvent rese
         p_heat <- p_data %>%
           ggplot() +
           geom_bar(aes(x = wk_date4, y = 0.9, fill = prop), stat = "identity",
-                   width = barwidth) +
+                   width = barwidth, color = "black") +
           # Invisible geom that exists only to create the legend key
           geom_tile(aes(x = wk_date4, y = -99, color = na_label),
                     fill = "white", linewidth = 0.5, width = heatmap_width(), 
                     height = 0) +
-          scale_fill_gradient(low = "gray95", high = "steelblue3",
-                              na.value = "white",
-                              name = paste(yaxis_bubble(), "    "),
-                              guide = guide_colorbar(order = 1)) +
+          scale_fill_distiller(na.value = "white",
+                               palette = input$viscolors,
+                               direction = 1,
+                               name = paste(yaxis_bubble(), "    "),
+                               guide = guide_colorbar(order = 1)) +
           scale_color_manual(
             values = c("No observations" = "black"),
             labels = "",
@@ -790,7 +832,7 @@ server <- function(input, output, session) { # add session for observeEvent rese
                        strip.position = strip_side,
                        labeller = labeller(spp = label_wrap_gen(wrap_length))) +
             labs(caption = str_wrap(
-              paste0("Brighter blue bars indicate that a higher proportion of ",
+              paste0("Darker colored bars indicate that a higher proportion of ",
                      "observed plants had ",
                      if (input$php == "open") {"open "} else {},
                      "flowers. Dots above the vertical bars indicate whether ",
@@ -849,6 +891,42 @@ server <- function(input, output, session) { # add session for observeEvent rese
                                heatmap_text2 = 3.2, 
                                date_breaks = "2 months"), 
              device = "pdf",
+             width = 7.5, height = 10, units = "in", limitsize = FALSE)
+    }
+  )
+  # PNG export
+  output$download_png <- downloadHandler(
+    filename = function() {
+      vistype_clean <- gsub(" ", "_", tolower(input$vistype))
+      paste0("phenology_", vistype_clean, "_", Sys.Date(), ".png")
+    },
+    content = function(file) {
+      ggsave(file, 
+             plot = build_plot(strip_side = "right", 
+                               text_size = 8,
+                               heatmap_text1 = 4,
+                               heatmap_text2 = 3.2, 
+                               date_breaks = "2 months"), 
+             device = "png",
+             dpi = 300,
+             width = 7.5, height = 10, units = "in", limitsize = FALSE)
+    }
+  )
+  # JPG export
+  output$download_jpg <- downloadHandler(
+    filename = function() {
+      vistype_clean <- gsub(" ", "_", tolower(input$vistype))
+      paste0("phenology_", vistype_clean, "_", Sys.Date(), ".jpg")
+    },
+    content = function(file) {
+      ggsave(file, 
+             plot = build_plot(strip_side = "right", 
+                               text_size = 8,
+                               heatmap_text1 = 4,
+                               heatmap_text2 = 3.2, 
+                               date_breaks = "2 months"), 
+             device = "jpg",
+             dpi = 300,
              width = 7.5, height = 10, units = "in", limitsize = FALSE)
     }
   )
