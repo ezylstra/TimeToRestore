@@ -142,7 +142,7 @@ years <- 2013:current_yr
   # field is missing or incorrect. Best to download all records for species and
   # fixing/imputing state, and then filtering by state.
 
-data_filename <- paste0("data-app/status-intensity-", current_yr, 
+data_filename <- paste0("app/data-app/status-intensity-", current_yr, 
                         str_pad(last_month, width = 2, side = "left", pad = 0),
                         ".csv")
 
@@ -456,12 +456,12 @@ df <- df %>%
   left_join(select(locs, site, region, state4, state5), by = "site")
 
 # Write observation data and region boundaries to file
-flowers_filename <- paste0("data-app/status-intensity-flowers-", current_yr,
+flowers_filename <- paste0("app/data-app/status-intensity-flowers-", current_yr,
                         str_pad(last_month, width = 2, side = "left", pad = 0),
                         ".csv")
 
 if (!file.exists(flowers_filename) | update_data == TRUE) {
   write.csv(df, flowers_filename, row.names = FALSE)
-  writeVector(tx_regions, "data-app/tx-regions/tx-regions.shp", overwrite = FALSE)
+  writeVector(tx_regions, "app/data-app/tx-regions/tx-regions.shp", overwrite = FALSE)
 }
 ```

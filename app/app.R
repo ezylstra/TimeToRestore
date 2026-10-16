@@ -14,7 +14,13 @@ library(cowplot)
 
 # Load/format observation data ------------------------------------------------#
 
-df <- read.csv("data/status-intensity-flowers-May2026.csv")
+# Get most recent file name
+si_files <- list.files(path = "data-app/",
+                       pattern = "status-intensity-flowers-20",
+                       full.names = TRUE)
+flowerfile <- last(sort(si_files))
+
+df <- read.csv(flowerfile)
 df <- df %>%
   mutate(obsdate = ymd(obsdate)) %>%
   mutate(region = case_when(
@@ -66,6 +72,10 @@ loc_options <- distinct(dfw, state, region) %>%
 # Desired minimum sample size for calculating proportions/percents
 min_sample_size <- 5
 
+# Extract last observation date (month, year)
+last_year <- year(max(df$obsdate))
+last_month <- month.name[month(max(df$obsdate))]
+
 # ui --------------------------------------------------------------------------#
 
 ui <- page_navbar(
@@ -88,8 +98,9 @@ ui <- page_navbar(
           nav_panel(
             title = "Background",
             br(),
-            HTML("This app uses data submitted to <i>Nature's Notebook</i> since 
-                 January 2025 for species identified as priorities on the 
+            HTML("This app uses data submitted to <i>Nature's Notebook</i>  
+                 between January 2025 and ", last_month, " ", last_year, 
+                 " for species identified as priorities on the 
                  <i>Time to Restore</i> project. After a user selects options in
                  the <i><b>Settings</i></b> tab, they can view plots displaying
                  the weekly or biweekly percent of plants with flowers or
