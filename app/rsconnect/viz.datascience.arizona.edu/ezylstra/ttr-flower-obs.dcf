@@ -1,0 +1,12 @@
+name: ttr-flower-obs
+title: TTR-flower-obs
+username: ezylstra
+account: ezylstra
+server: viz.datascience.arizona.edu
+hostUrl: https://viz.datascience.arizona.edu/__api__
+appId: 1469
+bundleId: 10472
+url: https://viz.datascience.arizona.edu:443/content/58ca27bd-dbd6-4571-956c-620863062b4d/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
