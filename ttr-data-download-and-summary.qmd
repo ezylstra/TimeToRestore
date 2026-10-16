@@ -32,6 +32,11 @@ require(knitr)
 
 # Logical indicating whether to re-download data
 update_data <- FALSE
+
+# Get current year, month
+current_yr <- year(Sys.Date())
+current_month <- month(Sys.Date())
+last_month <- current_month - 1
 ```
 
 ### Identifying priority species
@@ -131,13 +136,15 @@ phenophases_byspp %>%
 
 phenophases <- c(500, 501, 516, 390)
 states4 <- c("LA", "NM", "OK", "TX")
-years <- 2013:2026
+years <- 2013:current_yr
   # Note: we could be missing observations in the four states if we use
   # the states argument in the download function because sometimes the state 
   # field is missing or incorrect. Best to download all records for species and
   # fixing/imputing state, and then filtering by state.
 
-data_filename <- "data/status-intensity-May2026.csv"
+data_filename <- paste0("data/status-intensity-", current_yr, 
+                        str_pad(last_month, width = 2, side = "left", pad = 0),
+                        ".csv")
 
 if (!file.exists(data_filename) | update_data == TRUE) {
   
@@ -147,7 +154,7 @@ if (!file.exists(data_filename) | update_data == TRUE) {
     request_source = "erinz",
     years = years,
     species_ids = spp_list$species_id,
-    phenophase_ids= phenophases,
+    phenophase_ids = phenophases,
     additional_fields = c("observedby_person_id",
                           "partner_group",
                           "site_name"))
@@ -195,6 +202,11 @@ if (!file.exists(data_filename) | update_data == TRUE) {
     select(-state) %>%
     rename(state = state_new) %>%
     filter(!is.na(state) & state %in% region)
+  
+  # Filter out data after last day of last month (excluding data from current
+  # month)
+  status <- status %>%
+    filter(!(yr == current_yr & month(obsdate) == current_month))
   
   # Write to file
   write.csv(status, data_filename, row.names = FALSE)
@@ -254,7 +266,7 @@ df <- df %>%
 
 ### Summarizing where flowering data have been collected
 
-Mapping out some potential regions to subset observations in Texas (size indicates number of plants monitored at that site, 2013 through May 2026)
+Mapping out some potential regions to subset observations in Texas (size indicates number of plants monitored at that site, 2013 through last month)
 
 ```{r map-potential-regions}
 
@@ -265,11 +277,11 @@ locs <- df %>%
   summarize(n_spp = n_distinct(spp),
             n_plants = n_distinct(id),
             n_obs = n(),
-            n_obs_2325 = sum(yr %in% 2023:2025),
+            n_obs_recent = sum(yr %in% 2023:current_yr),
             .groups = "drop") %>%
   data.frame()
 
-# Site = no. plants  
+# Size = no. plants  
 map_nplants <- locs %>%
   leaflet() %>%
   addTiles() %>%
@@ -279,7 +291,7 @@ map_nplants <- locs %>%
     weight = 2,
     radius = ~n_plants)
 
-# Size = no. observations in 2023-2025 (handfull of dominant sites!)
+# Size = no. observations in 2023-current year (handfull of dominant sites!)
 map_nobs <- locs %>%
   leaflet() %>%
   addTiles() %>%
@@ -287,7 +299,7 @@ map_nobs <- locs %>%
     lng = ~lon,
     lat = ~lat,
     weight = 2,
-    radius = ~n_obs_2325/50)
+    radius = ~n_obs_recent/50)
 
 # What should regions be?
 # States: NM, OK, 
@@ -339,7 +351,7 @@ map_nobs_regions <- locs %>%
     lat = ~lat,
     weight = 2,
     color = "purple",
-    radius = ~n_obs_2325/50) %>%
+    radius = ~n_obs_recent/50) %>%
   addCircles(
     data = filter(tx_cities, city != "San Marcos"),
     lat = ~lat,
@@ -400,7 +412,7 @@ state_summary <- locs %>%
   group_by(state5) %>%
   summarize(sites = n(),
             plants = sum(n_plants),
-            obs = sum(n_obs_2325)) %>%
+            obs = sum(n_obs_recent)) %>%
   data.frame()
 
 # Summarize information for each region:
@@ -409,7 +421,7 @@ region_summary <- locs %>%
   group_by(region) %>%
   summarize(sites = n(),
             plants = sum(n_plants),
-            obs = sum(n_obs_2325)) %>%
+            obs = sum(n_obs_recent)) %>%
   data.frame()
 ```
 
@@ -421,7 +433,7 @@ state_summary %>%
   mutate(state5 = factor(state5, levels = c("LA", "NM", "OK", "TX", "Outside"))) %>%
   arrange(state5) %>%
   kable(col.names = c("Location", "Total no. sites", "Total no. plants",
-                      "No. observations (2023-2025)"))
+                      "No. observations (2023-current year)"))
 
 ```
 
@@ -433,7 +445,7 @@ Flowering data in each Texas region (vs everywhere else in four south-central st
 
 region_summary %>%
   kable(col.names = c("Region", "Total no. sites", "Total no. plants",
-                      "No. observations (2023-2025)"))
+                      "No. observations (2023-current_year)"))
 
 ```
 
@@ -444,10 +456,12 @@ df <- df %>%
   left_join(select(locs, site, region, state4, state5), by = "site")
 
 # Write observation data and region boundaries to file
-flowers_filename <- "data/status-intensity-flowers-May2026.csv"
+flowers_filename <- paste0("data/status-intensity-flowers-", current_yr,
+                        str_pad(last_month, width = 2, side = "left", pad = 0),
+                        ".csv")
 
 if (!file.exists(flowers_filename) | update_data == TRUE) {
-  write.csv(df, "data/status-intensity-flowers-May2026.csv", row.names = FALSE)
-  writeVector(tx_regions, "data/tx-regions/tx-regions.shp")
+  write.csv(df, flowers_filename, row.names = FALSE)
+  writeVector(tx_regions, "data/tx-regions/tx-regions.shp", overwrite = FALSE)
 }
 ```
